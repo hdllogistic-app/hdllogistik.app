@@ -1,4 +1,4 @@
-// HDL LOGISTIK V2 - Prisma 7 Schema Configuration
+// HDL LOGISTIK V2 - Prisma 7 Schema Configuration V1.3
 // Database: Railway PostgreSQL
 
 generator client {
@@ -10,12 +10,681 @@ datasource db {
   provider = "postgresql"
 }
 
-// Foundation model placeholder
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum UserRole {
+  OWNER
+  ADMIN
+  OPS
+  FINANCE
+  DRIVER
+}
+
+enum EmployeeDivision {
+  DRIVER
+  OPS
+  ADMIN
+  FINANCE
+  OTHER
+}
+
+enum ManifestStatus {
+  ACTIVE
+  VOID
+}
+
+enum ManifestBillingMode {
+  DIRECT
+  INVOICE
+}
+
+enum DeliveryStatus {
+  READY
+  ASSIGNED
+  IN_DELIVERY
+  SUCCESS
+  PENDING
+  CANCELLED
+}
+
+enum DeliveryAssignmentSource {
+  DESKTOP_BATCH
+  OPS_SCAN
+  OPS_MANUAL
+  ADMIN_MANUAL
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+}
+
+enum FinancialTransactionStatus {
+  POSTED
+  VOID
+}
+
+enum OperationalExpenseCategory {
+  BBM
+  E_TOLL
+  PARKING
+  VEHICLE_SERVICE
+  MEAL
+  RENT
+  UTILITY
+  OTHER
+}
+
+enum OperationalExpenseStatus {
+  ACTIVE
+  VOID
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  PERMIT
+  SICK
+}
+
+enum SalaryEntryStatus {
+  PENDING
+  APPROVED
+  CANCELLED
+}
+
+enum SalaryPayoutStatus {
+  DRAFT
+  PAID
+  VOID
+}
+
+enum CashAdvanceTransactionType {
+  DISBURSEMENT
+  REPAYMENT
+}
+
+enum CashAdvanceRepaymentSource {
+  CASH
+  SALARY_DEDUCTION
+  OTHER
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  PRINT
+  VOID
+  ASSIGN
+  CORRECT
+  CLOCK_IN
+  CLOCK_OUT
+}
+
+// ==========================================
+// AUTH & USERS
+// ==========================================
+
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String
-  role      String   // ADMIN, OPS, DRIVER
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String    @id @default(uuid())
+  loginId      String    @unique
+  email        String?   @unique
+  name         String
+  passwordHash String
+  role         UserRole
+  employeeId   String?   @unique
+  employee     Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Audit and activity relations
+  auditLogs                AuditLog[]
+  voidedManifests          Manifest[]                   @relation("ManifestVoidUser")
+  printedManifestLogs      ManifestPrintLog[]
+  assignedDeliveries       DeliveryAssignment[]         @relation("DeliveryAssigner")
+  deliveryEvents           DeliveryEvent[]
+  receivedManifestPayments ManifestPaymentTransaction[] @relation("PaymentReceiver")
+  voidedManifestPayments   ManifestPaymentTransaction[] @relation("ManifestPaymentVoidUser")
+  correctedPaymentAdjusts  ManifestPaymentAdjustment[]  @relation("PaymentCorrector")
+  createdExpenses          OperationalExpense[]         @relation("ExpenseCreator")
+  voidedExpenses           OperationalExpense[]         @relation("ExpenseVoidUser")
+  createdCashAdvanceTxns   CashAdvanceTransaction[]     @relation("CashAdvanceCreator")
+  receivedInvoicePayments  InvoicePayment[]             @relation("InvoicePaymentReceiver")
+  voidedInvoicePayments    InvoicePayment[]             @relation("InvoicePaymentVoidUser")
+  processedSalaryPayouts   SalaryPayout[]               @relation("SalaryPayoutProcessor")
+  voidedSalaryPayouts      SalaryPayout[]               @relation("SalaryPayoutVoidUser")
+
+  @@index([loginId])
+  @@index([email])
+  @@index([role])
+}
+
+// ==========================================
+// MASTER DATA
+// ==========================================
+
+model Employee {
+  id              String           @id @default(uuid())
+  employeeCode    String           @unique
+  fullName        String
+  phone           String
+  division        EmployeeDivision
+  dailySalaryRate Decimal          @db.Decimal(18, 2)
+  joinDate        DateTime         @db.Date
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  user                    User?
+  deliveryAssignments     DeliveryAssignment[]     @relation("DeliveryDriver")
+  deliveriesHandled       Delivery[]               @relation("DriverDeliveries")
+  deliveryProofs          DeliveryProof[]          @relation("DriverProofs")
+  attendances             Attendance[]
+  salaryEntries           SalaryEntry[]
+  salaryPayouts           SalaryPayout[]
+  cashAdvanceTransactions CashAdvanceTransaction[]
+  expenses                OperationalExpense[]     @relation("ExpenseEmployee")
+
+  @@index([employeeCode])
+  @@index([division])
+}
+
+model Customer {
+  id           String   @id @default(uuid())
+  customerCode String   @unique
+  name         String
+  phone        String
+  email        String?
+  address      String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  manifests Manifest[]
+  invoices  Invoice[]
+
+  @@index([customerCode])
+  @@index([name])
+}
+
+model Vehicle {
+  id          String   @id @default(uuid())
+  plateNumber String   @unique
+  nameType    String
+  active      Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  expenses OperationalExpense[]
+
+  @@index([plateNumber])
+}
+
+model WorkLocation {
+  id           String   @id @default(uuid())
+  name         String
+  latitude     Decimal  @db.Decimal(10, 8)
+  longitude    Decimal  @db.Decimal(11, 8)
+  radiusMeters Decimal  @db.Decimal(8, 2)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  attendances Attendance[]
+
+  @@index([name])
+}
+
+// ==========================================
+// MANIFEST & ORDER LOGISTICS
+// ==========================================
+
+model Manifest {
+  id                    String              @id @default(uuid())
+  resiNumber            String              @unique
+  date                  DateTime            @db.Date
+  billingMode           ManifestBillingMode @default(DIRECT)
+  customerId            String?
+  customer              Customer?           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  senderName            String
+  senderPhone           String
+  senderAddress         String
+  recipientName         String
+  recipientPhone        String
+  recipientProvinceArea String
+  recipientAddress      String
+  shareLocationUrl      String?
+  itemName              String
+  weightKg              Decimal             @db.Decimal(10, 2)
+  koliCount             Int
+  shippingRatePerKg     Decimal             @db.Decimal(18, 2)
+  totalShippingFee      Decimal             @db.Decimal(18, 2)
+  paymentDeliveryMethod String
+  codAmount             Decimal             @default(0) @db.Decimal(18, 2)
+  totalRecipientBill    Decimal             @db.Decimal(18, 2)
+  notes                 String?
+  status                ManifestStatus      @default(ACTIVE)
+  voidReason            String?
+  voidById              String?
+  voidBy                User?               @relation("ManifestVoidUser", fields: [voidById], references: [id], onDelete: SetNull)
+  voidAt                DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  printLogs    ManifestPrintLog[]
+  delivery     Delivery?
+  assignments  DeliveryAssignment[]
+  payment      ManifestPayment?
+  invoiceItems InvoiceItem[]
+
+  @@index([resiNumber])
+  @@index([date])
+  @@index([billingMode])
+  @@index([status])
+  @@index([customerId])
+}
+
+model ManifestPrintLog {
+  id          String   @id @default(uuid())
+  manifestId  String
+  manifest    Manifest @relation(fields: [manifestId], references: [id], onDelete: Restrict)
+  printedById String
+  printedBy   User     @relation(fields: [printedById], references: [id], onDelete: Restrict)
+  printedAt   DateTime @default(now())
+  notes       String?
+
+  @@index([manifestId])
+  @@index([printedAt])
+}
+
+// ==========================================
+// DELIVERY & DRIVER ASSIGNMENT
+// ==========================================
+
+model Delivery {
+  id            String         @id @default(uuid())
+  manifestId    String         @unique
+  manifest      Manifest       @relation(fields: [manifestId], references: [id], onDelete: Restrict)
+  driverId      String?
+  driver        Employee?      @relation("DriverDeliveries", fields: [driverId], references: [id], onDelete: SetNull)
+  status        DeliveryStatus @default(READY)
+  pendingReason String?
+  pendingNotes  String?
+  pendingAt     DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  assignments DeliveryAssignment[]
+  events      DeliveryEvent[]
+  proof       DeliveryProof?
+
+  @@index([status])
+  @@index([driverId])
+}
+
+model DeliveryAssignment {
+  id           String                   @id @default(uuid())
+  deliveryId   String
+  delivery     Delivery                 @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  manifestId   String
+  manifest     Manifest                 @relation(fields: [manifestId], references: [id], onDelete: Restrict)
+  driverId     String
+  driver       Employee                 @relation("DeliveryDriver", fields: [driverId], references: [id], onDelete: Restrict)
+  assignedById String
+  assignedBy   User                     @relation("DeliveryAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+  source       DeliveryAssignmentSource
+  assignedAt   DateTime                 @default(now())
+  unassignedAt DateTime?
+
+  @@index([deliveryId])
+  @@index([driverId])
+  @@index([assignedAt])
+}
+
+model DeliveryEvent {
+  id         String         @id @default(uuid())
+  deliveryId String
+  delivery   Delivery       @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  status     DeliveryStatus
+  notes      String?
+  actorId    String?
+  actor      User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  timestamp  DateTime       @default(now())
+
+  @@index([deliveryId])
+  @@index([timestamp])
+}
+
+model DeliveryProof {
+  id                  String   @id @default(uuid())
+  deliveryId          String   @unique
+  delivery            Delivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  actualRecipientName String
+  receivedAt          DateTime
+  photoUrl            String
+  signatureUrl        String?
+  latitude            Decimal  @db.Decimal(10, 8)
+  longitude           Decimal  @db.Decimal(11, 8)
+  notes               String?
+  driverId            String
+  driver              Employee @relation("DriverProofs", fields: [driverId], references: [id], onDelete: Restrict)
+  createdAt           DateTime @default(now())
+
+  @@index([receivedAt])
+  @@index([driverId])
+}
+
+// ==========================================
+// MANIFEST FINANCE & SETTLEMENT
+// ==========================================
+
+model ManifestPayment {
+  id             String        @id @default(uuid())
+  manifestId     String        @unique
+  manifest       Manifest      @relation(fields: [manifestId], references: [id], onDelete: Restrict)
+  expectedAmount Decimal       @db.Decimal(18, 2)
+  paidAmount     Decimal       @default(0) @db.Decimal(18, 2)
+  balanceDue     Decimal       @db.Decimal(18, 2)
+  status         PaymentStatus @default(UNPAID)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  transactions ManifestPaymentTransaction[]
+  adjustments  ManifestPaymentAdjustment[]
+
+  @@index([status])
+}
+
+model ManifestPaymentTransaction {
+  id              String                     @id @default(uuid())
+  paymentId       String
+  payment         ManifestPayment            @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  amount          Decimal                    @db.Decimal(18, 2)
+  method          PaymentMethod
+  status          FinancialTransactionStatus @default(POSTED)
+  paidAt          DateTime
+  receivedById    String?
+  receivedBy      User?                      @relation("PaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+  referenceNumber String?
+  notes           String?
+  voidReason      String?
+  voidedAt        DateTime?
+  voidedById      String?
+  voidedBy        User?                      @relation("ManifestPaymentVoidUser", fields: [voidedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime                   @default(now())
+
+  @@index([paymentId])
+  @@index([status])
+  @@index([paidAt])
+}
+
+model ManifestPaymentAdjustment {
+  id                String          @id @default(uuid())
+  paymentId         String
+  payment           ManifestPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  originalExpected  Decimal         @db.Decimal(18, 2)
+  correctedExpected Decimal         @db.Decimal(18, 2)
+  adjustmentAmount  Decimal         @db.Decimal(18, 2)
+  reason            String
+  correctedById     String
+  correctedBy       User            @relation("PaymentCorrector", fields: [correctedById], references: [id], onDelete: Restrict)
+  createdAt         DateTime        @default(now())
+
+  @@index([paymentId])
+}
+
+// ==========================================
+// OPERATIONAL EXPENSES & CASH ADVANCE
+// ==========================================
+
+model OperationalExpense {
+  id              String                     @id @default(uuid())
+  date            DateTime                   @db.Date
+  category        OperationalExpenseCategory
+  amount          Decimal                    @db.Decimal(18, 2)
+  status          OperationalExpenseStatus   @default(ACTIVE)
+  vehicleId       String?
+  vehicle         Vehicle?                   @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  employeeId      String?
+  employee        Employee?                  @relation("ExpenseEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+  description     String
+  receiptPhotoUrl String?
+  createdById     String
+  createdBy       User                       @relation("ExpenseCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  voidReason      String?
+  voidedAt        DateTime?
+  voidedById      String?
+  voidedBy        User?                      @relation("ExpenseVoidUser", fields: [voidedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  @@index([date])
+  @@index([category])
+  @@index([status])
+  @@index([vehicleId])
+  @@index([employeeId])
+}
+
+model CashAdvanceTransaction {
+  id              String                      @id @default(uuid())
+  employeeId      String
+  employee        Employee                    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  type            CashAdvanceTransactionType
+  repaymentSource CashAdvanceRepaymentSource?
+  amount          Decimal                     @db.Decimal(18, 2)
+  date            DateTime                    @db.Date
+  description     String
+  salaryPayoutId  String?
+  salaryPayout    SalaryPayout?               @relation(fields: [salaryPayoutId], references: [id], onDelete: SetNull)
+  createdById     String
+  createdBy       User                        @relation("CashAdvanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt       DateTime                    @default(now())
+
+  @@index([employeeId])
+  @@index([salaryPayoutId])
+  @@index([date])
+  @@index([type])
+  @@index([repaymentSource])
+}
+
+// ==========================================
+// INVOICING
+// ==========================================
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  invoiceDate   DateTime      @db.Date
+  dueDate       DateTime      @db.Date
+  status        InvoiceStatus @default(DRAFT)
+  subtotal      Decimal       @db.Decimal(18, 2)
+  discount      Decimal       @default(0) @db.Decimal(18, 2)
+  total         Decimal       @db.Decimal(18, 2)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items    InvoiceItem[]
+  payments InvoicePayment[]
+
+  @@index([invoiceNumber])
+  @@index([customerId])
+  @@index([invoiceDate])
+  @@index([status])
+}
+
+model InvoiceItem {
+  id          String    @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  manifestId  String?
+  manifest    Manifest? @relation(fields: [manifestId], references: [id], onDelete: SetNull)
+  description String
+  qty         Int       @default(1)
+  unitPrice   Decimal   @db.Decimal(18, 2)
+  amount      Decimal   @db.Decimal(18, 2)
+
+  @@index([invoiceId])
+  @@index([manifestId])
+}
+
+model InvoicePayment {
+  id              String                     @id @default(uuid())
+  invoiceId       String
+  invoice         Invoice                    @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amount          Decimal                    @db.Decimal(18, 2)
+  method          PaymentMethod
+  status          FinancialTransactionStatus @default(POSTED)
+  paidAt          DateTime
+  receivedById    String?
+  receivedBy      User?                      @relation("InvoicePaymentReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+  referenceNumber String?
+  notes           String?
+  voidReason      String?
+  voidedAt        DateTime?
+  voidedById      String?
+  voidedBy        User?                      @relation("InvoicePaymentVoidUser", fields: [voidedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime                   @default(now())
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([paidAt])
+}
+
+// ==========================================
+// ATTENDANCE & PAYROLL
+// ==========================================
+
+model Attendance {
+  id             String           @id @default(uuid())
+  employeeId     String
+  employee       Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  workLocationId String
+  workLocation   WorkLocation     @relation(fields: [workLocationId], references: [id], onDelete: Restrict)
+  date           DateTime         @db.Date
+  clockIn        DateTime
+  clockOut       DateTime?
+  clockInLat     Decimal          @db.Decimal(10, 8)
+  clockInLng     Decimal          @db.Decimal(11, 8)
+  distanceMeters Decimal          @db.Decimal(8, 2)
+  status         AttendanceStatus @default(PRESENT)
+  photoUrl       String?
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  salaryEntry SalaryEntry?
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+}
+
+model SalaryEntry {
+  id               String            @id @default(uuid())
+  employeeId       String
+  employee         Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  date             DateTime          @db.Date
+  attendanceId     String?           @unique
+  attendance       Attendance?       @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  dailyRateApplied Decimal           @db.Decimal(18, 2)
+  amount           Decimal           @db.Decimal(18, 2)
+  status           SalaryEntryStatus @default(PENDING)
+  notes            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  payoutItem SalaryPayoutItem?
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+}
+
+model SalaryPayout {
+  id                   String             @id @default(uuid())
+  payoutNumber         String             @unique
+  employeeId           String
+  employee             Employee           @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  periodStart          DateTime           @db.Date
+  periodEnd            DateTime           @db.Date
+  grossAmount          Decimal            @db.Decimal(18, 2)
+  cashAdvanceDeduction Decimal            @default(0) @db.Decimal(18, 2)
+  otherDeduction       Decimal            @default(0) @db.Decimal(18, 2)
+  netAmount            Decimal            @db.Decimal(18, 2)
+  paymentMethod        PaymentMethod
+  status               SalaryPayoutStatus @default(DRAFT)
+  paidAt               DateTime?
+  processedById        String
+  processedBy          User               @relation("SalaryPayoutProcessor", fields: [processedById], references: [id], onDelete: Restrict)
+  notes                String?
+  voidReason           String?
+  voidedAt             DateTime?
+  voidedById           String?
+  voidedBy             User?              @relation("SalaryPayoutVoidUser", fields: [voidedById], references: [id], onDelete: SetNull)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  items                   SalaryPayoutItem[]
+  cashAdvanceTransactions CashAdvanceTransaction[]
+
+  @@index([payoutNumber])
+  @@index([employeeId])
+  @@index([status])
+  @@index([paidAt])
+}
+
+model SalaryPayoutItem {
+  id            String       @id @default(uuid())
+  payoutId      String
+  payout        SalaryPayout @relation(fields: [payoutId], references: [id], onDelete: Restrict)
+  salaryEntryId String       @unique
+  salaryEntry   SalaryEntry  @relation(fields: [salaryEntryId], references: [id], onDelete: Restrict)
+  amount        Decimal      @db.Decimal(18, 2)
+
+  @@index([payoutId])
+}
+
+// ==========================================
+// AUDIT LOG
+// ==========================================
+
+model AuditLog {
+  id           String      @id @default(uuid())
+  actorId      String?
+  actor        User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action       AuditAction
+  entityType   String
+  entityId     String
+  metadataJson String?
+  timestamp    DateTime    @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([timestamp])
 }
