@@ -1,0 +1,42 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing & Coverage
+/coverage
+
+# Next.js build output
+/.next/
+/out/
+/build
+
+# Prisma 7 Generated Client
+/src/generated
+
+# TypeScript build info
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Environment files and secrets
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+*.env
+!.env.example
+
+# Debug & Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# System & IDE files
+.DS_Store
+.vercel
+*.pem

@@ -1,0 +1,21 @@
+// HDL LOGISTIK V2 - Prisma 7 Schema Configuration
+// Database: Railway PostgreSQL
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Foundation model placeholder
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  role      String   // ADMIN, OPS, DRIVER
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
