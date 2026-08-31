@@ -11,18 +11,33 @@ export const createManifestSchema = z
     senderAddress: z.string().trim().min(3, 'Alamat pengirim wajib diisi').max(255),
     recipientName: z.string().trim().min(1, 'Nama penerima wajib diisi').max(100),
     recipientPhone: z.string().trim().min(8, 'Nomor HP penerima minimal 8 karakter').max(20),
-    recipientProvinceArea: z.string().trim().min(1, 'Area / Wilayah tujuan wajib diisi').max(100),
+    recipientProvince: z.string().trim().min(1, 'Provinsi tujuan wajib dipilih').optional(),
+    recipientCity: z.string().trim().min(1, 'Kota / Kabupaten tujuan wajib dipilih').optional(),
+    recipientProvinceArea: z.string().trim().optional(),
     recipientAddress: z.string().trim().min(3, 'Alamat penerima wajib diisi').max(255),
     shareLocationUrl: z.string().trim().optional().nullable(),
     itemName: z.string().trim().min(1, 'Nama barang wajib diisi').max(100),
     weightKg: z.number().positive('Berat barang harus lebih besar dari 0'),
     koliCount: z.number().int().min(1, 'Jumlah koli minimal 1'),
-    shippingRatePerKg: z.number().min(0, 'Ongkos kirim per kg tidak boleh negatif'),
+    shippingRatePerKg: z.number().optional(),
     billingMode: z.enum(['DIRECT', 'INVOICE']),
     paymentDeliveryMethod: z.enum(['CASH', 'DFOD', 'COD']),
     codAmount: z.number().min(0, 'Nilai COD tidak boleh negatif').optional().default(0),
     notes: z.string().trim().max(500, 'Catatan maksimal 500 karakter').optional().nullable(),
   })
+  .refine(
+    (data) => {
+      // Must have either recipientProvince & recipientCity OR recipientProvinceArea
+      if ((!data.recipientProvince || !data.recipientCity) && !data.recipientProvinceArea) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'Provinsi dan Kota / Kabupaten tujuan wajib dipilih.',
+      path: ['recipientCity'],
+    }
+  )
   .refine(
     (data) => {
       if (data.paymentDeliveryMethod === 'COD') {
@@ -48,6 +63,8 @@ export interface CreateManifestResult {
     paymentDeliveryMethod: string;
     senderName: string;
     recipientName: string;
+    recipientProvinceArea: string;
+    shippingRatePerKg: number;
     totalShippingFee: number;
     codAmount: number;
     totalRecipientBill: number;
@@ -59,14 +76,19 @@ export interface CreateManifestResult {
 const MAX_RESI_RETRY = 5;
 
 /**
- * Domain Service for Creating a Logistics Manifest (V1.3 Revision).
- * - Enforces paymentDeliveryMethod enum ('CASH', 'DFOD', 'COD').
- * - Backend recalculates totalShippingFee and normalizes totalRecipientBill & codAmount:
+ * Domain Service for Creating a Logistics Manifest (V1.4 Shipping Rate Master Integration).
+ * - Backend is SINGLE SOURCE OF TRUTH for shipping rates:
+ *   - Parses recipientProvince & recipientCity (or parses recipientProvinceArea formatted as "CITY, PROVINCE").
+ *   - Normalizes province and city to uppercase.
+ *   - Queries active ShippingRate in DB where province, city, active = true.
+ *   - Rejects if rate not found or inactive.
+ *   - Ignores client-supplied shippingRatePerKg (anti-rate-forging!).
+ *   - Calculates totalShippingFee = weightKg * shippingRatePerKg (Decimal-safe).
+ *   - Stores snapshot recipientProvinceArea as "{CITY}, {PROVINCE}" and snapshot shippingRatePerKg.
+ * - Payment Method rules (V1.3/V1.4):
  *   - CASH: codAmount = 0, totalRecipientBill = 0
  *   - DFOD: codAmount = 0, totalRecipientBill = totalShippingFee
  *   - COD: codAmount = manual input (> 0), totalRecipientBill = codAmount
- * - Executes concurrency-safe resi generation with targeted retry on resiNumber P2002.
- * - Atomically inserts Manifest, Delivery (READY), ManifestPayment (UNPAID), and AuditLog (CREATE).
  */
 export async function createManifestService(
   rawInput: CreateManifestInput,
@@ -84,15 +106,48 @@ export async function createManifestService(
 
   const data = parseResult.data;
 
-  // Decimal-safe backend financial calculations
+  // Extract and normalize province and city
+  let province = '';
+  let city = '';
+
+  if (data.recipientProvince && data.recipientCity) {
+    province = data.recipientProvince.trim().replace(/\s+/g, ' ').toUpperCase();
+    city = data.recipientCity.trim().replace(/\s+/g, ' ').toUpperCase();
+  } else if (data.recipientProvinceArea && data.recipientProvinceArea.includes(',')) {
+    const parts = data.recipientProvinceArea.split(',');
+    city = parts[0].trim().replace(/\s+/g, ' ').toUpperCase();
+    province = parts.slice(1).join(',').trim().replace(/\s+/g, ' ').toUpperCase();
+  } else {
+    return {
+      success: false,
+      error: 'Provinsi dan Kota / Kabupaten tujuan wajib dipilih.',
+    };
+  }
+
+  // Backend SINGLE SOURCE OF TRUTH: Query ShippingRate from DB
+  const shippingRateRecord = await prisma.shippingRate.findFirst({
+    where: {
+      province,
+      city,
+      active: true,
+    },
+  });
+
+  if (!shippingRateRecord) {
+    return {
+      success: false,
+      error: `Tarif ongkir untuk area ${city}, ${province} tidak tersedia atau tidak aktif.`,
+    };
+  }
+
+  const rateDecimal = shippingRateRecord.ratePerKg;
   const weightDecimal = new Prisma.Decimal(data.weightKg);
-  const rateDecimal = new Prisma.Decimal(data.shippingRatePerKg);
   const totalShippingFee = weightDecimal.mul(rateDecimal);
+  const recipientProvinceArea = `${city}, ${province}`;
 
   let codDecimal = new Prisma.Decimal(0);
   let totalRecipientBill = new Prisma.Decimal(0);
 
-  // Business logic rules for Payment Methods V1.3
   switch (data.paymentDeliveryMethod) {
     case 'CASH':
       codDecimal = new Prisma.Decimal(0);
@@ -116,7 +171,7 @@ export async function createManifestService(
         // 1. Generate next concurrency-safe resi number
         const resiNumber = await generateNextResiNumber(tx, datePrefix);
 
-        // 2. Create Manifest record
+        // 2. Create Manifest record with snapshot area & snapshot rate
         const manifest = await tx.manifest.create({
           data: {
             resiNumber,
@@ -128,7 +183,7 @@ export async function createManifestService(
             senderAddress: data.senderAddress,
             recipientName: data.recipientName,
             recipientPhone: data.recipientPhone,
-            recipientProvinceArea: data.recipientProvinceArea,
+            recipientProvinceArea,
             recipientAddress: data.recipientAddress,
             shareLocationUrl: data.shareLocationUrl || null,
             itemName: data.itemName,
@@ -174,6 +229,10 @@ export async function createManifestService(
               resiNumber: manifest.resiNumber,
               billingMode: manifest.billingMode,
               paymentDeliveryMethod: manifest.paymentDeliveryMethod,
+              recipientProvince: province,
+              recipientCity: city,
+              shippingRatePerKg: rateDecimal.toNumber(),
+              totalShippingFee: totalShippingFee.toNumber(),
               totalRecipientBill: totalRecipientBill.toNumber(),
             }),
           },
@@ -192,6 +251,8 @@ export async function createManifestService(
           paymentDeliveryMethod: createdRecord.paymentDeliveryMethod,
           senderName: createdRecord.senderName,
           recipientName: createdRecord.recipientName,
+          recipientProvinceArea: createdRecord.recipientProvinceArea,
+          shippingRatePerKg: createdRecord.shippingRatePerKg.toNumber(),
           totalShippingFee: createdRecord.totalShippingFee.toNumber(),
           codAmount: createdRecord.codAmount.toNumber(),
           totalRecipientBill: createdRecord.totalRecipientBill.toNumber(),
@@ -199,7 +260,6 @@ export async function createManifestService(
         },
       };
     } catch (err: unknown) {
-      // Precise P2002 check: Retry ONLY if unique constraint violation is specifically on resiNumber
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'

@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Coins,
 } from 'lucide-react';
 
 interface CustomerOption {
@@ -21,9 +22,23 @@ interface CustomerOption {
   address: string;
 }
 
+interface ShippingRateOption {
+  id: string;
+  province: string;
+  city: string;
+  ratePerKg: number;
+}
+
 export function InputManifestForm() {
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+
+  // Shipping Rates Master State
+  const [shippingRates, setShippingRates] = useState<ShippingRateOption[]>([]);
+  const [loadingRates, setLoadingRates] = useState<boolean>(true);
+  const [selectedProvince, setSelectedProvince] = useState<string>('');
+  const [selectedCity, setSelectedCity] = useState<string>('');
+  const [currentRatePerKg, setCurrentRatePerKg] = useState<number>(0);
 
   // Form Fields
   const [senderName, setSenderName] = useState('');
@@ -32,14 +47,12 @@ export function InputManifestForm() {
 
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
-  const [recipientProvinceArea, setRecipientProvinceArea] = useState('');
   const [recipientAddress, setRecipientAddress] = useState('');
   const [shareLocationUrl, setShareLocationUrl] = useState('');
 
   const [itemName, setItemName] = useState('');
   const [weightKg, setWeightKg] = useState<string>('1');
   const [koliCount, setKoliCount] = useState<string>('1');
-  const [shippingRatePerKg, setShippingRatePerKg] = useState<string>('10000');
   const [billingMode, setBillingMode] = useState<'DIRECT' | 'INVOICE'>('DIRECT');
   const [paymentDeliveryMethod, setPaymentDeliveryMethod] = useState<'CASH' | 'DFOD' | 'COD'>('CASH');
   const [codAmount, setCodAmount] = useState<string>('0');
@@ -67,6 +80,55 @@ export function InputManifestForm() {
     fetchCustomers();
   }, []);
 
+  // Fetch active shipping rates master
+  useEffect(() => {
+    async function fetchRates() {
+      setLoadingRates(true);
+      try {
+        const res = await fetch('/api/shipping-rates/active');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.rates)) {
+          setShippingRates(data.rates);
+        }
+      } catch (err) {
+        console.error('Failed to load shipping rates master:', err);
+      } finally {
+        setLoadingRates(false);
+      }
+    }
+    fetchRates();
+  }, []);
+
+  // Available distinct provinces from active shipping rates
+  const availableProvinces = Array.from(new Set(shippingRates.map((r) => r.province))).sort();
+
+  // Available cities filtered by selected province
+  const availableCities = shippingRates
+    .filter((r) => r.province === selectedProvince)
+    .sort((a, b) => a.city.localeCompare(b.city));
+
+  // Handle Province change and reset dependent city and rate
+  const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const prov = e.target.value;
+    setSelectedProvince(prov);
+    setSelectedCity('');
+    setCurrentRatePerKg(0);
+  };
+
+  // Handle City change and update read-only rate per kg
+  const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const c = e.target.value;
+    setSelectedCity(c);
+    const matched = shippingRates.find(
+      (r) => r.province === selectedProvince && r.city === c
+    );
+    if (matched) {
+      setCurrentRatePerKg(matched.ratePerKg);
+    } else {
+      setCurrentRatePerKg(0);
+    }
+  };
+
   // Customer Prefill Selection Handler
   const handleCustomerSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const custId = e.target.value;
@@ -82,12 +144,11 @@ export function InputManifestForm() {
     }
   };
 
-  // Live Calculations (Preview Only — Backend recalculates safely)
+  // Live Calculations (Preview Only — Backend recalculates safely as single source of truth)
   const numericWeight = parseFloat(weightKg) || 0;
-  const numericRate = parseFloat(shippingRatePerKg) || 0;
   const numericCOD = parseFloat(codAmount) || 0;
 
-  const totalShippingFeePreview = Math.max(0, numericWeight * numericRate);
+  const totalShippingFeePreview = Math.max(0, numericWeight * currentRatePerKg);
 
   let totalRecipientBillPreview = 0;
   if (paymentDeliveryMethod === 'DFOD') {
@@ -105,13 +166,14 @@ export function InputManifestForm() {
     setSenderAddress('');
     setRecipientName('');
     setRecipientPhone('');
-    setRecipientProvinceArea('');
+    setSelectedProvince('');
+    setSelectedCity('');
+    setCurrentRatePerKg(0);
     setRecipientAddress('');
     setShareLocationUrl('');
     setItemName('');
     setWeightKg('1');
     setKoliCount('1');
-    setShippingRatePerKg('10000');
     setBillingMode('DIRECT');
     setPaymentDeliveryMethod('CASH');
     setCodAmount('0');
@@ -122,18 +184,24 @@ export function InputManifestForm() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    // Basic Client Validation
+    // Client Validation
     if (
       !senderName.trim() ||
       !senderPhone.trim() ||
       !senderAddress.trim() ||
       !recipientName.trim() ||
       !recipientPhone.trim() ||
-      !recipientProvinceArea.trim() ||
+      !selectedProvince ||
+      !selectedCity ||
       !recipientAddress.trim() ||
       !itemName.trim()
     ) {
-      setErrorMessage('Semua field data pengirim, penerima, dan nama barang wajib diisi.');
+      setErrorMessage('Semua field data pengirim, penerima (termasuk Provinsi & Kota), dan nama barang wajib diisi.');
+      return;
+    }
+
+    if (currentRatePerKg <= 0) {
+      setErrorMessage('Tarif ongkir untuk area ini tidak tersedia. Periksa Database Ongkir.');
       return;
     }
 
@@ -176,13 +244,14 @@ export function InputManifestForm() {
           senderAddress: senderAddress.trim(),
           recipientName: recipientName.trim(),
           recipientPhone: recipientPhone.trim(),
-          recipientProvinceArea: recipientProvinceArea.trim(),
+          recipientProvince: selectedProvince,
+          recipientCity: selectedCity,
+          recipientProvinceArea: `${selectedCity}, ${selectedProvince}`,
           recipientAddress: recipientAddress.trim(),
           shareLocationUrl: shareLocationUrl.trim() || null,
           itemName: itemName.trim(),
           weightKg: numericWeight,
           koliCount: parseInt(koliCount, 10),
-          shippingRatePerKg: numericRate,
           billingMode,
           paymentDeliveryMethod,
           codAmount: paymentDeliveryMethod === 'COD' ? numericCOD : 0,
@@ -202,112 +271,86 @@ export function InputManifestForm() {
         return;
       }
 
-      // 4. HANDLE CREATION SUCCESS: NAVIGATE RESERVED WINDOW TO PRINT URL
-      const createdResi = data.manifest.resiNumber;
-      setLastCreatedResi(createdResi);
-      setSuccessMessage(`Manifest berhasil disimpan dengan Nomor Resi: ${createdResi}`);
+      // 4. CREATION SUCCESS: REDIRECT PRINT WINDOW IF INTENDED
+      const resi = data.manifest.resiNumber;
+      const manifestId = data.manifest.id;
+      setLastCreatedResi(resi);
 
       if (mode === 'INPUT_AND_PRINT' && printWindow) {
-        printWindow.location.href = `/manifest/print/${createdResi}?autoprint=1`;
-        try {
-          printWindow.opener = null;
-        } catch {
-          // ignore opener error if any
-        }
+        printWindow.location.href = `/manifest/print/${manifestId}`;
+        setSuccessMessage(`Manifest resi ${resi} berhasil dibuat dan jendela cetak telah dibuka.`);
+      } else {
+        setSuccessMessage(`Manifest resi ${resi} berhasil dibuat dan disimpan.`);
       }
 
       resetForm();
-    } catch {
+    } catch (err) {
       if (printWindow) {
         printWindow.close();
       }
-      setErrorMessage('Terjadi kesalahan koneksi ke server.');
+      setErrorMessage('Terjadi kesalahan koneksi ke server saat menyimpan manifest.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner Feedback */}
-      {lastCreatedResi && (
-        <div className="p-4 rounded-xl bg-blue-950/40 border border-blue-800/60 flex items-center justify-between gap-4 text-blue-200">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="w-6 h-6 text-blue-400 shrink-0" />
-            <div>
-              <div className="text-xs text-blue-300 font-medium">Resi Terakhir Berhasil Dibuat:</div>
-              <div className="text-lg font-mono font-bold text-white tracking-widest">
-                {lastCreatedResi}
-              </div>
-            </div>
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Top Banner Success Notification */}
+      {successMessage && (
+        <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-800/60 flex items-center justify-between gap-4 text-emerald-300 text-sm">
+          <div className="flex items-center gap-3 font-semibold">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{successMessage}</span>
           </div>
-          <a
-            href={`/manifest/print/${lastCreatedResi}`}
-            target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shrink-0"
+          <button
+            onClick={() => setSuccessMessage(null)}
+            className="text-xs text-emerald-400 hover:text-white underline shrink-0"
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Cetak Ulang</span>
-          </a>
+            Tutup
+          </button>
         </div>
       )}
 
-      {/* Error Alert */}
+      {/* Error Notification */}
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-red-950/50 border border-red-800/60 flex items-start gap-3 text-red-300 text-sm">
-          <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-          <div className="flex-1 font-medium">{errorMessage}</div>
+        <div className="p-4 rounded-xl bg-red-950/50 border border-red-800/60 flex items-center gap-3 text-red-300 text-sm">
+          <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+          <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Success Alert */}
-      {successMessage && !lastCreatedResi && (
-        <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-800/60 flex items-start gap-3 text-emerald-300 text-sm">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-          <div className="flex-1 font-medium">{successMessage}</div>
-        </div>
-      )}
-
-      {/* Input Form Cards Container */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* SECTION 1: DATA PENGIRIM */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+      {/* Form Container */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden divide-y divide-slate-800/60">
+        
+        {/* 1. DATA PENGIRIM */}
+        <div className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
               <User className="w-4 h-4" />
               <span>1. Data Pengirim (Sender)</span>
             </div>
+
             {customers.length > 0 && (
-              <span className="text-[10px] text-slate-500 font-mono">
-                {customers.length} Pelanggan Terdaftar
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-medium">Pilih Pelanggan:</span>
+                <select
+                  value={selectedCustomerId}
+                  onChange={handleCustomerSelect}
+                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                >
+                  <option value="">-- Isi Manual --</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.phone})
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
 
-          {/* Prefill Autocomplete Select */}
-          {customers.length > 0 && (
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-400">
-                Pilih Pelanggan Terdaftar (Opsional Prefill):
-              </label>
-              <select
-                value={selectedCustomerId}
-                onChange={handleCustomerSelect}
-                disabled={loading}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:ring-2 focus:ring-sky-500 focus:outline-none"
-              >
-                <option value="">-- Input Pengirim Manual --</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.customerCode} - {c.name} ({c.phone})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Nama Pengirim <span className="text-red-400">*</span>
@@ -317,9 +360,8 @@ export function InputManifestForm() {
                 required
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}
-                disabled={loading}
-                placeholder="Contoh: PT Sumber Rejeki"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none disabled:opacity-50"
+                placeholder="Contoh: Toko Sentosa"
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
 
@@ -332,338 +374,363 @@ export function InputManifestForm() {
                 required
                 value={senderPhone}
                 onChange={(e) => setSenderPhone(e.target.value)}
-                disabled={loading}
-                placeholder="Contoh: 081234567890"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none disabled:opacity-50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Alamat Pengirim <span className="text-red-400">*</span>
-              </label>
-              <textarea
-                rows={2}
-                required
-                value={senderAddress}
-                onChange={(e) => setSenderAddress(e.target.value)}
-                disabled={loading}
-                placeholder="Alamat lengkap pengirim"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none disabled:opacity-50"
+                placeholder="Contoh: 08123456789"
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
           </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Alamat Lengkap Pengirim <span className="text-red-400">*</span>
+            </label>
+            <textarea
+              rows={2}
+              required
+              value={senderAddress}
+              onChange={(e) => setSenderAddress(e.target.value)}
+              placeholder="Contoh: Jl. Industri No. 45, Bandung"
+              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            />
+          </div>
         </div>
 
-        {/* SECTION 2: DATA PENERIMA */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
-          <div className="flex items-center gap-2 text-indigo-400 font-bold text-sm uppercase tracking-wider border-b border-slate-800 pb-3">
+        {/* 2. DATA PENERIMA */}
+        <div className="p-6 space-y-4">
+          <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
             <MapPin className="w-4 h-4" />
             <span>2. Data Penerima (Recipient)</span>
           </div>
 
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nama Penerima <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={recipientName}
-                  onChange={(e) => setRecipientName(e.target.value)}
-                  disabled={loading}
-                  placeholder="Contoh: Budi Santoso"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nomor HP Penerima <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={recipientPhone}
-                  onChange={(e) => setRecipientPhone(e.target.value)}
-                  disabled={loading}
-                  placeholder="Contoh: 089876543210"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
-                />
-              </div>
-            </div>
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Area / Wilayah Tujuan <span className="text-red-400">*</span>
+                Nama Penerima <span className="text-red-400">*</span>
               </label>
               <input
                 type="text"
                 required
-                value={recipientProvinceArea}
-                onChange={(e) => setRecipientProvinceArea(e.target.value)}
-                disabled={loading}
-                placeholder="Contoh: Surabaya Barat / Jawa Timur"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
+                value={recipientName}
+                onChange={(e) => setRecipientName(e.target.value)}
+                placeholder="Contoh: Budi Santoso"
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Alamat Lengkap Penerima <span className="text-red-400">*</span>
-              </label>
-              <textarea
-                rows={2}
-                required
-                value={recipientAddress}
-                onChange={(e) => setRecipientAddress(e.target.value)}
-                disabled={loading}
-                placeholder="Alamat lengkap penerima"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1">
-                Share Location / Link Google Maps (Opsional)
+                Nomor HP Penerima <span className="text-red-400">*</span>
               </label>
               <input
                 type="text"
-                value={shareLocationUrl}
-                onChange={(e) => setShareLocationUrl(e.target.value)}
-                disabled={loading}
-                placeholder="https://maps.app.goo.gl/..."
-                className="w-full px-3.5 py-2 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
+                required
+                value={recipientPhone}
+                onChange={(e) => setRecipientPhone(e.target.value)}
+                placeholder="Contoh: 08987654321"
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
           </div>
+
+          {/* PROVINSI & KOTA/KABUPATEN DROPDOWNS FROM SHIPPING RATE MASTER */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Provinsi <span className="text-red-400">*</span>
+              </label>
+              {loadingRates ? (
+                <div className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-500 text-xs flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                  <span>Memuat area...</span>
+                </div>
+              ) : shippingRates.length === 0 ? (
+                <div className="px-3.5 py-2.5 bg-slate-950 border border-red-800/60 rounded-xl text-red-400 text-xs font-medium">
+                  Database ongkir belum tersedia. Tambahkan area melalui Pengaturan → Database Ongkir.
+                </div>
+              ) : (
+                <select
+                  required
+                  value={selectedProvince}
+                  onChange={handleProvinceChange}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                >
+                  <option value="">[ Pilih Provinsi ▼ ]</option>
+                  {availableProvinces.map((prov) => (
+                    <option key={prov} value={prov}>
+                      {prov}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Kota / Kabupaten <span className="text-red-400">*</span>
+              </label>
+              {loadingRates ? (
+                <div className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-500 text-xs flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                  <span>Memuat kota...</span>
+                </div>
+              ) : (
+                <select
+                  required
+                  disabled={!selectedProvince || availableCities.length === 0}
+                  value={selectedCity}
+                  onChange={handleCityChange}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none disabled:opacity-50"
+                >
+                  <option value="">[ Pilih Kota / Kabupaten ▼ ]</option>
+                  {availableCities.map((r) => (
+                    <option key={r.id} value={r.city}>
+                      {r.city} (Rp {r.ratePerKg.toLocaleString('id-ID')}/kg)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Alamat Lengkap Penerima <span className="text-red-400">*</span>
+            </label>
+            <textarea
+              rows={2}
+              required
+              value={recipientAddress}
+              onChange={(e) => setRecipientAddress(e.target.value)}
+              placeholder="Contoh: Jl. Raya Tanjungsari No. 12, Sumedang"
+              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Link Google Maps / Share Location (Opsional)
+            </label>
+            <input
+              type="text"
+              value={shareLocationUrl}
+              onChange={(e) => setShareLocationUrl(e.target.value)}
+              placeholder="Contoh: https://maps.app.goo.gl/xxx"
+              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            />
+          </div>
         </div>
 
-        {/* SECTION 3: DATA BARANG & BIAYA */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
-          <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm uppercase tracking-wider border-b border-slate-800 pb-3">
+        {/* 3. DATA BARANG & RINCIAN ONGKIR */}
+        <div className="p-6 space-y-4">
+          <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
             <Package className="w-4 h-4" />
             <span>3. Data Barang & Rincian Ongkir</span>
           </div>
 
-          <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Nama Barang <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={itemName}
+              onChange={(e) => setItemName(e.target.value)}
+              placeholder="Contoh: Sparepart Mobil / Pakaian"
+              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Nama Barang <span className="text-red-400">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={itemName}
-                onChange={(e) => setItemName(e.target.value)}
-                disabled={loading}
-                placeholder="Contoh: Sparepart Mesin / DUS Makanan"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Berat Barang (kg) <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.1"
-                  required
-                  value={weightKg}
-                  onChange={(e) => setWeightKg(e.target.value)}
-                  disabled={loading}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Jumlah Koli <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  value={koliCount}
-                  onChange={(e) => setKoliCount(e.target.value)}
-                  disabled={loading}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Tarif Ongkir / kg (Rp) <span className="text-red-400">*</span>
+                Berat Total (Kg) <span className="text-red-400">*</span>
               </label>
               <input
                 type="number"
-                min="0"
-                step="100"
+                step="0.1"
+                min="0.1"
                 required
-                value={shippingRatePerKg}
-                onChange={(e) => setShippingRatePerKg(e.target.value)}
-                disabled={loading}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
+                value={weightKg}
+                onChange={(e) => setWeightKg(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
 
-            {/* Live Financial Calculation Box */}
-            <div className="p-3 bg-slate-950 border border-emerald-900/50 rounded-xl space-y-1">
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>Total Ongkir ({weightKg} kg × Rp {numericRate.toLocaleString('id-ID')}):</span>
-                <span className="font-mono font-semibold text-emerald-400">
-                  Rp {totalShippingFeePreview.toLocaleString('id-ID')}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm font-bold text-white pt-1 border-t border-slate-800">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Jumlah Koli <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                required
+                value={koliCount}
+                onChange={(e) => setKoliCount(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              />
+            </div>
+
+            {/* READ ONLY TARIF ONGKIR / KG FROM DATABASE ONGKIR MASTER */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                <span>Tarif Ongkir / Kg</span>
+                <span className="text-[10px] text-emerald-400 font-mono font-normal">Database Rate</span>
+              </label>
+              <div className="px-3.5 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-emerald-400 text-xs font-mono font-bold flex items-center justify-between">
                 <span>
-                  {paymentDeliveryMethod === 'DFOD'
-                    ? 'Tagihan DFOD ke Penerima:'
-                    : paymentDeliveryMethod === 'COD'
-                    ? 'Tagihan COD ke Penerima:'
-                    : 'Tagihan Penerima:'}
+                  {currentRatePerKg > 0
+                    ? `Rp ${currentRatePerKg.toLocaleString('id-ID')} / Kg`
+                    : 'Pilih area tujuan'}
                 </span>
-                <span className="font-mono text-emerald-300">
-                  Rp {totalRecipientBillPreview.toLocaleString('id-ID')}
-                </span>
+                <Coins className="w-3.5 h-3.5 text-emerald-500/50" />
               </div>
             </div>
+          </div>
+
+          {/* TOTAL ONGKIR DISPLAY */}
+          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              Total Ongkos Kirim:
+            </span>
+            <span className="text-lg font-bold font-mono text-emerald-400">
+              Rp {totalShippingFeePreview.toLocaleString('id-ID')}
+            </span>
           </div>
         </div>
 
-        {/* SECTION 4: PEMBAYARAN & CATATAN */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl flex flex-col justify-between">
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-amber-400 font-bold text-sm uppercase tracking-wider border-b border-slate-800 pb-3">
-              <CreditCard className="w-4 h-4" />
-              <span>4. Mode Pembayaran & Catatan</span>
+        {/* 4. MODE PEMBAYARAN & CATATAN */}
+        <div className="p-6 space-y-4">
+          <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
+            <CreditCard className="w-4 h-4" />
+            <span>4. Mode Pembayaran & Catatan</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Mode Penagihan (Billing Mode) <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={billingMode}
+                onChange={(e) => setBillingMode(e.target.value as 'DIRECT' | 'INVOICE')}
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              >
+                <option value="DIRECT">DIRECT (Penagihan Langsung)</option>
+                <option value="INVOICE">INVOICE (Tagihan Pelanggan)</option>
+              </select>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Mode Penagihan (Billing Mode) <span className="text-red-400">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setBillingMode('DIRECT')}
-                    disabled={loading}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
-                      billingMode === 'DIRECT'
-                        ? 'bg-amber-500/10 border-amber-500 text-amber-300 ring-2 ring-amber-500/20'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    DIRECT (Pembayaran Langsung)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBillingMode('INVOICE')}
-                    disabled={loading}
-                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
-                      billingMode === 'INVOICE'
-                        ? 'bg-amber-500/10 border-amber-500 text-amber-300 ring-2 ring-amber-500/20'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    INVOICE (Tagihan Kolektif)
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Metode Pembayaran <span className="text-red-400">*</span>
-                </label>
-                <select
-                  value={paymentDeliveryMethod}
-                  onChange={(e) => setPaymentDeliveryMethod(e.target.value as 'CASH' | 'DFOD' | 'COD')}
-                  disabled={loading}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-semibold focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                >
-                  <option value="CASH">CASH — Pembayaran Tunai (Pengirim / Lunas)</option>
-                  <option value="DFOD">DFOD — Delivery Fee On Delivery (Bayar Ongkir di Penerima)</option>
-                  <option value="COD">COD — Cash On Delivery (Tagihan Barang ke Penerima)</option>
-                </select>
-              </div>
-
-              {/* Dynamic COD Field */}
-              {paymentDeliveryMethod === 'COD' && (
-                <div className="space-y-1 p-3 bg-amber-950/30 border border-amber-800/40 rounded-xl">
-                  <label className="block text-xs font-bold text-amber-300">
-                    Nominal COD / Tagihan Penerima (Rp) <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1000"
-                    required
-                    value={codAmount}
-                    onChange={(e) => setCodAmount(e.target.value)}
-                    disabled={loading}
-                    placeholder="Contoh: 1500000"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-amber-700/60 rounded-xl text-amber-200 text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                  />
-                  <p className="text-[11px] text-amber-400/80">
-                    Nominal ini adalah TOTAL yang akan ditagihkan kepada penerima barang.
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Catatan Pengiriman (Opsional)
-                </label>
-                <textarea
-                  rows={2}
-                  maxLength={500}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  disabled={loading}
-                  placeholder="Instruksi khusus / catatan pengiriman"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none disabled:opacity-50"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Metode Pembayaran <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={paymentDeliveryMethod}
+                onChange={(e) =>
+                  setPaymentDeliveryMethod(e.target.value as 'CASH' | 'DFOD' | 'COD')
+                }
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              >
+                <option value="CASH">CASH (Bayar Pengirim)</option>
+                <option value="DFOD">DFOD (Delivery Fee on Delivery - Ongkir Bayar Penerima)</option>
+                <option value="COD">COD (Cash on Delivery - Barang + Ongkir Bayar Penerima)</option>
+              </select>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-4 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Input Only */}
+          {/* DYNAMIC METODE PEMBAYARAN INFORMATION & INPUT BANNER */}
+          {paymentDeliveryMethod === 'CASH' && (
+            <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 space-y-1">
+              <div className="font-semibold text-slate-200">
+                Ringkasan Pembayaran CASH:
+              </div>
+              <p>• Total Ongkir: Rp {totalShippingFeePreview.toLocaleString('id-ID')} (Dibayar oleh Pengirim)</p>
+              <p>• Tagihan Penerima: Rp 0</p>
+            </div>
+          )}
+
+          {paymentDeliveryMethod === 'DFOD' && (
+            <div className="p-3.5 bg-indigo-950/40 border border-indigo-800/40 rounded-xl text-xs text-indigo-300 space-y-1">
+              <div className="font-semibold text-indigo-200">
+                Ringkasan Pembayaran DFOD (Delivery Fee on Delivery):
+              </div>
+              <p>• Total Ongkir: Rp {totalShippingFeePreview.toLocaleString('id-ID')}</p>
+              <p className="font-bold text-indigo-400">
+                • Tagihan Penerima Saat Delivery: Rp {totalShippingFeePreview.toLocaleString('id-ID')}
+              </p>
+            </div>
+          )}
+
+          {paymentDeliveryMethod === 'COD' && (
+            <div className="p-4 bg-amber-950/40 border border-amber-800/50 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-amber-300">
+                  Nominal COD / Tagihan Barang Penerima (Rp) <span className="text-red-400">*</span>
+                </label>
+                <span className="text-[10px] text-amber-400/80 font-mono">Wajib {'>'} 0</span>
+              </div>
+              <input
+                type="number"
+                min="1"
+                required
+                value={codAmount}
+                onChange={(e) => setCodAmount(e.target.value)}
+                placeholder="Masukkan nominal tagihan barang..."
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-amber-800/60 rounded-xl text-amber-300 font-mono font-bold text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              />
+              <div className="text-xs text-amber-300/80 space-y-1 border-t border-amber-800/40 pt-2 font-medium">
+                <p>• Ongkir Terpisah: Rp {totalShippingFeePreview.toLocaleString('id-ID')}</p>
+                <p className="font-bold text-amber-300">
+                  • Total Penagihan ke Penerima: Rp {totalRecipientBillPreview.toLocaleString('id-ID')}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Catatan Operasional (Opsional)
+            </label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Contoh: Titip di pos satpam jika rumah kosong"
+              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {/* FOOTER ACTIONS */}
+        <div className="p-6 bg-slate-950 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="text-xs text-slate-400 font-mono">
+            {lastCreatedResi && (
+              <span>Resi Terakhir: <strong className="text-sky-400 font-bold">{lastCreatedResi}</strong></span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <button
               type="button"
-              onClick={() => handleSave('INPUT_ONLY')}
               disabled={loading}
-              className="w-full py-3.5 px-4 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl border border-slate-700 shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              onClick={() => handleSave('INPUT_ONLY')}
+              className="flex-1 sm:flex-initial px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition border border-slate-700 flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
-              ) : (
-                <FileText className="w-4 h-4 text-sky-400" />
-              )}
-              <span>Simpan (Input Only)</span>
+              {loading && <Loader2 className="w-4 h-4 animate-spin text-sky-400" />}
+              <FileText className="w-4 h-4" />
+              <span>Input Saja</span>
             </button>
 
-            {/* Input & Print */}
             <button
               type="button"
-              onClick={() => handleSave('INPUT_AND_PRINT')}
               disabled={loading}
-              className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/20 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              onClick={() => handleSave('INPUT_AND_PRINT')}
+              className="flex-1 sm:flex-initial px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-sky-600/20 transition flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
-              ) : (
-                <Printer className="w-4 h-4 text-white" />
-              )}
-              <span>Simpan & Cetak (Input & Print)</span>
+              {loading && <Loader2 className="w-4 h-4 animate-spin text-white" />}
+              <Printer className="w-4 h-4" />
+              <span>Input & Print Resi</span>
             </button>
           </div>
         </div>
