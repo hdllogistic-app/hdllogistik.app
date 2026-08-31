@@ -34,31 +34,59 @@ export default function AdminLayout({
       {/* Main Admin Area */}
       <div className="flex-1 flex">
         {/* Desktop Sidebar */}
-        <aside className="w-64 border-r border-slate-800 bg-slate-950/40 p-4 hidden md:block">
-          <nav className="space-y-1 text-sm">
-            <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Modul Utama
+        <aside className="w-64 border-r border-slate-800 bg-slate-950/40 p-4 hidden md:block shrink-0">
+          <nav className="space-y-4 text-sm">
+            {/* Modul Utama */}
+            <div className="space-y-1">
+              <div className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Modul Utama
+              </div>
+              <Link
+                href="/"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+              >
+                Dashboard
+              </Link>
+              <Link
+                href="/manifest/input"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+              >
+                Input Manifest
+              </Link>
+              <Link
+                href="/manifest"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+              >
+                Rincian Manifest
+              </Link>
+              <div className="px-3 py-2 rounded-md text-slate-500 cursor-not-allowed">
+                Finance & Cashflow
+              </div>
             </div>
-            <Link
-              href="/"
-              className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/manifest/input"
-              className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
-            >
-              Input Manifest
-            </Link>
-            <Link
-              href="/manifest"
-              className="block px-3 py-2 rounded-md bg-sky-500/10 text-sky-400 font-semibold border border-sky-500/20 hover:bg-sky-500/20 transition"
-            >
-              Rincian Manifest
-            </Link>
-            <div className="px-3 py-2 rounded-md text-slate-500 cursor-not-allowed">
-              Finance & Cashflow
+
+            {/* Pengaturan */}
+            <div className="space-y-1 border-t border-slate-800/80 pt-3">
+              <div className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Pengaturan
+              </div>
+              <Link
+                href="/settings/shipping-rates"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+              >
+                Database Ongkir
+              </Link>
+              <Link
+                href="/settings/drivers"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+              >
+                Pengaturan Driver
+              </Link>
+              <Link
+                href="/settings/vehicles"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+              >
+                Pengaturan Armada
+              </Link>
             </div>
           </nav>
         </aside>
