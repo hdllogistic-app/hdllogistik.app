@@ -76,10 +76,10 @@ export default function AdminLayout({
                 Database Ongkir
               </Link>
               <Link
-                href="/settings/drivers"
+                href="/settings/team"
                 className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
               >
-                Pengaturan Driver
+                Pengaturan Team
               </Link>
               <Link
                 href="/settings/vehicles"

@@ -51,9 +51,9 @@ export default async function SettingsLandingPage() {
           </div>
         </Link>
 
-        {/* Pengaturan Driver */}
+        {/* Pengaturan Team */}
         <Link
-          href="/settings/drivers"
+          href="/settings/team"
           className="group p-6 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-sky-500/40 hover:bg-slate-900 transition-all shadow-xl space-y-4"
         >
           <div className="flex justify-between items-start">
@@ -63,9 +63,9 @@ export default async function SettingsLandingPage() {
             <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-sky-400 group-hover:translate-x-1 transition-all" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-white group-hover:text-sky-400 transition">Pengaturan Driver</h3>
+            <h3 className="text-lg font-bold text-white group-hover:text-sky-400 transition">Pengaturan Team</h3>
             <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-              Kelola master data driver operasional yang tersedia untuk penugasan dan penjadwalan pengiriman.
+              Kelola anggota team dan divisi operasional.
             </p>
           </div>
         </Link>
