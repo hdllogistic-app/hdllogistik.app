@@ -47,13 +47,16 @@ export default function AdminLayout({
             </Link>
             <Link
               href="/manifest/input"
-              className="block px-3 py-2 rounded-md bg-sky-500/10 text-sky-400 font-semibold border border-sky-500/20 hover:bg-sky-500/20 transition"
+              className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
             >
               Input Manifest
             </Link>
-            <div className="px-3 py-2 rounded-md text-slate-500 cursor-not-allowed">
-              Penjadwalan Driver
-            </div>
+            <Link
+              href="/manifest"
+              className="block px-3 py-2 rounded-md bg-sky-500/10 text-sky-400 font-semibold border border-sky-500/20 hover:bg-sky-500/20 transition"
+            >
+              Rincian Manifest
+            </Link>
             <div className="px-3 py-2 rounded-md text-slate-500 cursor-not-allowed">
               Finance & Cashflow
             </div>
