@@ -24,6 +24,7 @@ enum UserRole {
 
 enum EmployeeDivision {
   DRIVER
+  HELPER
   OPS
   ADMIN
   FINANCE
