@@ -41,7 +41,7 @@ export function InputManifestForm() {
   const [koliCount, setKoliCount] = useState<string>('1');
   const [shippingRatePerKg, setShippingRatePerKg] = useState<string>('10000');
   const [billingMode, setBillingMode] = useState<'DIRECT' | 'INVOICE'>('DIRECT');
-  const [paymentDeliveryMethod, setPaymentDeliveryMethod] = useState('DIRECT');
+  const [paymentDeliveryMethod, setPaymentDeliveryMethod] = useState<'CASH' | 'DFOD' | 'COD'>('CASH');
   const [codAmount, setCodAmount] = useState<string>('0');
   const [notes, setNotes] = useState('');
 
@@ -88,7 +88,15 @@ export function InputManifestForm() {
   const numericCOD = parseFloat(codAmount) || 0;
 
   const totalShippingFeePreview = Math.max(0, numericWeight * numericRate);
-  const totalRecipientBillPreview = totalShippingFeePreview + Math.max(0, numericCOD);
+
+  let totalRecipientBillPreview = 0;
+  if (paymentDeliveryMethod === 'DFOD') {
+    totalRecipientBillPreview = totalShippingFeePreview;
+  } else if (paymentDeliveryMethod === 'COD') {
+    totalRecipientBillPreview = Math.max(0, numericCOD);
+  } else {
+    totalRecipientBillPreview = 0;
+  }
 
   const resetForm = () => {
     setSelectedCustomerId('');
@@ -105,7 +113,7 @@ export function InputManifestForm() {
     setKoliCount('1');
     setShippingRatePerKg('10000');
     setBillingMode('DIRECT');
-    setPaymentDeliveryMethod('DIRECT');
+    setPaymentDeliveryMethod('CASH');
     setCodAmount('0');
     setNotes('');
   };
@@ -136,6 +144,11 @@ export function InputManifestForm() {
 
     if (parseInt(koliCount, 10) < 1) {
       setErrorMessage('Jumlah koli minimal 1.');
+      return;
+    }
+
+    if (paymentDeliveryMethod === 'COD' && numericCOD <= 0) {
+      setErrorMessage('Nominal COD / Tagihan Penerima wajib diisi dan harus lebih besar dari 0 untuk metode COD.');
       return;
     }
 
@@ -172,7 +185,7 @@ export function InputManifestForm() {
           shippingRatePerKg: numericRate,
           billingMode,
           paymentDeliveryMethod,
-          codAmount: numericCOD,
+          codAmount: paymentDeliveryMethod === 'COD' ? numericCOD : 0,
           notes: notes.trim() || null,
         }),
       });
@@ -484,49 +497,38 @@ export function InputManifestForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Tarif Ongkir / kg (Rp) <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="100"
-                  required
-                  value={shippingRatePerKg}
-                  onChange={(e) => setShippingRatePerKg(e.target.value)}
-                  disabled={loading}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nilai Barang COD (Rp)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1000"
-                  value={codAmount}
-                  onChange={(e) => setCodAmount(e.target.value)}
-                  disabled={loading}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Tarif Ongkir / kg (Rp) <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                required
+                value={shippingRatePerKg}
+                onChange={(e) => setShippingRatePerKg(e.target.value)}
+                disabled={loading}
+                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
+              />
             </div>
 
             {/* Live Financial Calculation Box */}
             <div className="p-3 bg-slate-950 border border-emerald-900/50 rounded-xl space-y-1">
               <div className="flex justify-between text-xs text-slate-400">
-                <span>Preview Total Ongkir ({weightKg} kg × Rp {numericRate.toLocaleString('id-ID')}):</span>
+                <span>Total Ongkir ({weightKg} kg × Rp {numericRate.toLocaleString('id-ID')}):</span>
                 <span className="font-mono font-semibold text-emerald-400">
                   Rp {totalShippingFeePreview.toLocaleString('id-ID')}
                 </span>
               </div>
               <div className="flex justify-between text-sm font-bold text-white pt-1 border-t border-slate-800">
-                <span>Total Tagihan Penerima:</span>
+                <span>
+                  {paymentDeliveryMethod === 'DFOD'
+                    ? 'Tagihan DFOD ke Penerima:'
+                    : paymentDeliveryMethod === 'COD'
+                    ? 'Tagihan COD ke Penerima:'
+                    : 'Tagihan Penerima:'}
+                </span>
                 <span className="font-mono text-emerald-300">
                   Rp {totalRecipientBillPreview.toLocaleString('id-ID')}
                 </span>
@@ -578,17 +580,42 @@ export function InputManifestForm() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Metode Penyerahan Pembayaran
+                  Metode Pembayaran <span className="text-red-400">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   value={paymentDeliveryMethod}
-                  onChange={(e) => setPaymentDeliveryMethod(e.target.value)}
+                  onChange={(e) => setPaymentDeliveryMethod(e.target.value as 'CASH' | 'DFOD' | 'COD')}
                   disabled={loading}
-                  placeholder="Contoh: CASH / TRANSFER"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none disabled:opacity-50"
-                />
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm font-semibold focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                >
+                  <option value="CASH">CASH — Pembayaran Tunai (Pengirim / Lunas)</option>
+                  <option value="DFOD">DFOD — Delivery Fee On Delivery (Bayar Ongkir di Penerima)</option>
+                  <option value="COD">COD — Cash On Delivery (Tagihan Barang ke Penerima)</option>
+                </select>
               </div>
+
+              {/* Dynamic COD Field */}
+              {paymentDeliveryMethod === 'COD' && (
+                <div className="space-y-1 p-3 bg-amber-950/30 border border-amber-800/40 rounded-xl">
+                  <label className="block text-xs font-bold text-amber-300">
+                    Nominal COD / Tagihan Penerima (Rp) <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1000"
+                    required
+                    value={codAmount}
+                    onChange={(e) => setCodAmount(e.target.value)}
+                    disabled={loading}
+                    placeholder="Contoh: 1500000"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-amber-700/60 rounded-xl text-amber-200 text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                  <p className="text-[11px] text-amber-400/80">
+                    Nominal ini adalah TOTAL yang akan ditagihkan kepada penerima barang.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">

@@ -12,10 +12,10 @@ interface PrintPageProps {
 }
 
 /**
- * Print Preview Page for Logistics Manifest.
+ * Print Preview Page for Logistics Manifest (V1.3 Revision).
  * Strictly READ-ONLY Server Component GET view.
  * Verifies DAL authorization (OWNER, ADMIN, OPS allowed; FINANCE & DRIVER blocked).
- * Does NOT mutate database on GET render or page refresh.
+ * Displays Payment Method (CASH / DFOD / COD), Total Shipping Fee, and Recipient Bill.
  */
 export default async function ManifestPrintPage({ params, searchParams }: PrintPageProps) {
   const { id } = await params;
@@ -90,12 +90,20 @@ export default async function ManifestPrintPage({ params, searchParams }: PrintP
           </div>
         </div>
 
-        {/* Mode Pembayaran Badge */}
-        <div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg border border-slate-300 print:bg-slate-200">
-          <span className="text-xs font-bold uppercase text-slate-700">Mode Penagihan:</span>
-          <span className="inline-block px-3 py-1 bg-slate-900 text-white text-xs font-bold rounded uppercase">
-            {manifest.billingMode === 'DIRECT' ? 'Pembayaran Langsung (DIRECT)' : 'Tagihan Invoice (INVOICE)'}
-          </span>
+        {/* Mode Penagihan & Metode Pembayaran Badges */}
+        <div className="flex flex-wrap justify-between items-center bg-slate-100 p-3 rounded-lg border border-slate-300 print:bg-slate-200 gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase text-slate-700">Metode Pembayaran:</span>
+            <span className="inline-block px-3 py-1 bg-blue-900 text-white text-xs font-bold rounded uppercase">
+              {manifest.paymentDeliveryMethod}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase text-slate-700">Mode Penagihan:</span>
+            <span className="inline-block px-3 py-1 bg-slate-900 text-white text-xs font-bold rounded uppercase">
+              {manifest.billingMode === 'DIRECT' ? 'Pembayaran Langsung (DIRECT)' : 'Tagihan Invoice (INVOICE)'}
+            </span>
+          </div>
         </div>
 
         {/* Pengirim & Penerima Grid */}
@@ -165,7 +173,7 @@ export default async function ManifestPrintPage({ params, searchParams }: PrintP
           </table>
         </div>
 
-        {/* Ringkasan Biaya & COD */}
+        {/* Ringkasan Biaya & Tagihan Penerima */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-50 p-4 border border-slate-300 rounded-lg">
           <div>
             {manifest.notes && (
@@ -174,17 +182,17 @@ export default async function ManifestPrintPage({ params, searchParams }: PrintP
               </div>
             )}
             <div className="text-xs text-slate-500 mt-1">
-              Metode Penyerahan: <span className="font-semibold text-slate-800">{manifest.paymentDeliveryMethod}</span>
+              Metode Pembayaran: <span className="font-bold text-slate-900">{manifest.paymentDeliveryMethod}</span>
             </div>
           </div>
           <div className="text-right mt-3 sm:mt-0 space-y-1">
-            {manifest.codAmount.gt(0) && (
+            {manifest.paymentDeliveryMethod === 'COD' && manifest.codAmount.gt(0) && (
               <div className="text-xs text-slate-700">
-                Nilai COD Barang: <span className="font-mono font-bold text-slate-900">{formattedCOD}</span>
+                Nominal COD Barang: <span className="font-mono font-bold text-slate-900">{formattedCOD}</span>
               </div>
             )}
             <div className="text-sm font-black text-slate-900">
-              Total Tagihan Penerima:{' '}
+              Tagihan Penerima:{' '}
               <span className="text-lg font-mono text-blue-900">{formattedTotalBill}</span>
             </div>
           </div>

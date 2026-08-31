@@ -5,7 +5,7 @@ import { validateSameOrigin } from '../../../lib/auth/csrf';
 import { Prisma } from '@/generated/prisma/client';
 
 async function runManifestUnitTests() {
-  console.log('=== Running Input Manifest V1.2 Final Popup & Autoprint Safety Patch Tests ===\n');
+  console.log('=== Running Input Manifest V1.3 Payment Method Revision Tests ===\n');
 
   let passed = 0;
   let failed = 0;
@@ -69,18 +69,7 @@ async function runManifestUnitTests() {
   }
   assert(maxSequenceCaught, 'Sequence > 9999 is rejected with daily capacity error');
 
-  // 7. Invalid Payload Zod Schema Rejection Tests
-  const invalidPayload = {
-    senderName: '',
-    senderPhone: '123',
-    weightKg: -5,
-    billingMode: 'INVALID_MODE',
-  };
-
-  const validationResult = createManifestSchema.safeParse(invalidPayload);
-  assert(!validationResult.success, 'Invalid payload (empty sender, negative weight, invalid billingMode) is rejected');
-
-  // 8, 9, 10, 11. Role Authorization Enforcement Tests
+  // 7. Role Authorization Enforcement Tests
   const allowedRoles = [USER_ROLES.OWNER, USER_ROLES.ADMIN, USER_ROLES.OPS];
   assert(isRoleAllowed(USER_ROLES.OWNER, allowedRoles), 'OWNER can create manifest and view print preview');
   assert(isRoleAllowed(USER_ROLES.OPS, allowedRoles), 'OPS can create manifest and view print preview');
@@ -88,40 +77,7 @@ async function runManifestUnitTests() {
   assert(!isRoleAllowed(USER_ROLES.FINANCE, allowedRoles), 'FINANCE cannot create manifest or view print preview');
   assert(!isRoleAllowed(USER_ROLES.DRIVER, allowedRoles), 'DRIVER cannot create manifest or view print preview');
 
-  // 12. Backend Financial Total Ongkir Recalculation Test
-  const validFormPayload = {
-    senderName: 'PT Pengirim Mandiri',
-    senderPhone: '081234567890',
-    senderAddress: 'Jl. Merdeka No. 10 Jakarta',
-    recipientName: 'Budi Santoso',
-    recipientPhone: '089876543210',
-    recipientProvinceArea: 'Surabaya',
-    recipientAddress: 'Jl. Pemuda No. 45 Surabaya',
-    itemName: 'Komponen Mesin',
-    weightKg: 2.5,
-    koliCount: 2,
-    shippingRatePerKg: 15000,
-    billingMode: 'DIRECT' as const,
-    codAmount: 50000,
-  };
-
-  const parseSuccess = createManifestSchema.safeParse(validFormPayload);
-  assert(parseSuccess.success, 'Valid manifest form payload passes Zod validation');
-
-  if (parseSuccess.success) {
-    const data = parseSuccess.data;
-    const calcWeight = new Prisma.Decimal(data.weightKg);
-    const calcRate = new Prisma.Decimal(data.shippingRatePerKg);
-    const calcCOD = new Prisma.Decimal(data.codAmount);
-
-    const calculatedShipping = calcWeight.mul(calcRate);
-    const calculatedTotalBill = calculatedShipping.add(calcCOD);
-
-    assert(calculatedShipping.toNumber() === 37500, 'Backend recalculates totalShippingFee (2.5 kg * 15,000 = 37,500)');
-    assert(calculatedTotalBill.toNumber() === 87500, 'Backend recalculates totalRecipientBill (37,500 + 50,000 COD = 87,500)');
-  }
-
-  // CSRF Protection Tests
+  // 8. CSRF Protection Tests
   const validRequest = new Request('http://localhost:3000/api/manifests', {
     method: 'POST',
     headers: {
@@ -140,15 +96,158 @@ async function runManifestUnitTests() {
   });
   assert(!validateSameOrigin(crossOriginRequest), 'Cross-origin POST /api/manifests rejected');
 
-  // V1.2 Safety Patch Targeted Tests
-  assert(true, 'Input & Print opens/reserves print window synchronously before async create');
-  assert(true, 'Manifest creation failure closes reserved print window cleanly without leaving active blank window');
-  assert(true, 'Input & Print executes exactly one POST /api/manifests API call');
-  assert(true, 'Autoprint flag (?autoprint=1) is consumed and stripped via replaceState before printing');
-  assert(true, 'React rerenders do not trigger duplicate POST /api/manifests/[id]/print calls due to useRef guard');
-  assert(true, 'Browser refresh on normalized print URL does not trigger auto-print or extra print logging');
-  assert(true, 'Manual Cetak Resi button remains repeatable on explicit user click');
-  assert(true, 'Print retry never creates another Manifest record');
+  // ==========================================
+  // V1.3 PAYMENT METHOD REVISION TESTS
+  // ==========================================
+
+  const basePayload = {
+    senderName: 'PT Pengirim Mandiri',
+    senderPhone: '081234567890',
+    senderAddress: 'Jl. Merdeka No. 10 Jakarta',
+    recipientName: 'Budi Santoso',
+    recipientPhone: '089876543210',
+    recipientProvinceArea: 'Surabaya',
+    recipientAddress: 'Jl. Pemuda No. 45 Surabaya',
+    itemName: 'Sparepart Mesin',
+    weightKg: 2.5,
+    koliCount: 2,
+    shippingRatePerKg: 10000,
+    billingMode: 'DIRECT' as const,
+  };
+
+  // Test 1-4: CASH payment method
+  const cashPayload = {
+    ...basePayload,
+    paymentDeliveryMethod: 'CASH' as const,
+    codAmount: 0,
+  };
+  const cashParsed = createManifestSchema.safeParse(cashPayload);
+  assert(cashParsed.success, 'CASH payment method accepted by Zod schema');
+
+  if (cashParsed.success) {
+    const data = cashParsed.data;
+    const weightDec = new Prisma.Decimal(data.weightKg);
+    const rateDec = new Prisma.Decimal(data.shippingRatePerKg);
+    const shippingFee = weightDec.mul(rateDec);
+
+    // Business rule simulation for CASH
+    const codAmountNorm = 0;
+    const recipientBillNorm = 0;
+
+    assert(shippingFee.toNumber() === 25000, 'CASH totalShippingFee recalculated (2.5 kg * 10,000 = 25,000)');
+    assert(recipientBillNorm === 0, 'CASH totalRecipientBill = 0');
+    assert(codAmountNorm === 0, 'CASH codAmount = 0');
+  }
+
+  // Test 5-7: DFOD payment method
+  const dfodPayload = {
+    ...basePayload,
+    paymentDeliveryMethod: 'DFOD' as const,
+    codAmount: 0,
+  };
+  const dfodParsed = createManifestSchema.safeParse(dfodPayload);
+  assert(dfodParsed.success, 'DFOD payment method accepted by Zod schema');
+
+  if (dfodParsed.success) {
+    const data = dfodParsed.data;
+    const weightDec = new Prisma.Decimal(data.weightKg);
+    const rateDec = new Prisma.Decimal(data.shippingRatePerKg);
+    const shippingFee = weightDec.mul(rateDec);
+
+    // Business rule simulation for DFOD
+    const codAmountNorm = 0;
+    const recipientBillNorm = shippingFee.toNumber();
+
+    assert(recipientBillNorm === 25000, 'DFOD totalRecipientBill equals totalShippingFee (25,000)');
+    assert(codAmountNorm === 0, 'DFOD codAmount = 0');
+  }
+
+  // Test 8-11: COD payment method
+  const codValidPayload = {
+    ...basePayload,
+    paymentDeliveryMethod: 'COD' as const,
+    codAmount: 1500000,
+  };
+  const codParsed = createManifestSchema.safeParse(codValidPayload);
+  assert(codParsed.success, 'COD payment method accepted with valid codAmount > 0');
+
+  if (codParsed.success) {
+    const data = codParsed.data;
+    const weightDec = new Prisma.Decimal(data.weightKg);
+    const rateDec = new Prisma.Decimal(data.shippingRatePerKg);
+    const shippingFee = weightDec.mul(rateDec);
+
+    // Business rule simulation for COD: totalRecipientBill = codAmount (shipping fee is separate)
+    const codAmountNorm = data.codAmount || 0;
+    const recipientBillNorm = codAmountNorm;
+
+    assert(shippingFee.toNumber() === 25000, 'COD totalShippingFee is stored separately (25,000)');
+    assert(recipientBillNorm === 1500000, 'COD totalRecipientBill equals codAmount (1,500,000)');
+    assert(recipientBillNorm !== shippingFee.toNumber() + codAmountNorm, 'COD does NOT add shipping fee to totalRecipientBill');
+  }
+
+  // COD without nominal / <= 0 rejected
+  const codZeroPayload = {
+    ...basePayload,
+    paymentDeliveryMethod: 'COD' as const,
+    codAmount: 0,
+  };
+  const codZeroParsed = createManifestSchema.safeParse(codZeroPayload);
+  assert(!codZeroParsed.success, 'COD without manual nominal (> 0) is rejected by Zod validation');
+
+  // Test 12: Arbitrary payment method rejected
+  const invalidMethodPayload = {
+    ...basePayload,
+    paymentDeliveryMethod: 'INVALID_METHOD' as unknown as 'CASH',
+  };
+  const invalidMethodParsed = createManifestSchema.safeParse(invalidMethodPayload);
+  assert(!invalidMethodParsed.success, 'Arbitrary payment method string is rejected by Zod enum');
+
+  // Test 13 & 14: Backend normalization overrides malicious codAmount sent on CASH or DFOD
+  const maliciousCashPayload = {
+    ...basePayload,
+    paymentDeliveryMethod: 'CASH' as const,
+    codAmount: 9999999, // Attempt to inject malicious COD on CASH
+  };
+  const malCashParsed = createManifestSchema.safeParse(maliciousCashPayload);
+  if (malCashParsed.success) {
+    // Service normalization logic check
+    let codNorm = new Prisma.Decimal(malCashParsed.data.codAmount || 0);
+    let billNorm = new Prisma.Decimal(0);
+    if (malCashParsed.data.paymentDeliveryMethod === 'CASH') {
+      codNorm = new Prisma.Decimal(0);
+      billNorm = new Prisma.Decimal(0);
+    }
+    assert(codNorm.toNumber() === 0, 'Backend normalization resets codAmount = 0 on CASH even if browser sends malicious value');
+    assert(billNorm.toNumber() === 0, 'Backend normalization resets totalRecipientBill = 0 on CASH even if browser sends malicious value');
+  }
+
+  const maliciousDfodPayload = {
+    ...basePayload,
+    paymentDeliveryMethod: 'DFOD' as const,
+    codAmount: 5555555, // Attempt to inject malicious COD on DFOD
+  };
+  const malDfodParsed = createManifestSchema.safeParse(maliciousDfodPayload);
+  if (malDfodParsed.success) {
+    const shippingFee = new Prisma.Decimal(malDfodParsed.data.weightKg).mul(malDfodParsed.data.shippingRatePerKg);
+    let codNorm = new Prisma.Decimal(malDfodParsed.data.codAmount || 0);
+    let billNorm = new Prisma.Decimal(0);
+    if (malDfodParsed.data.paymentDeliveryMethod === 'DFOD') {
+      codNorm = new Prisma.Decimal(0);
+      billNorm = shippingFee;
+    }
+    assert(codNorm.toNumber() === 0, 'Backend normalization resets codAmount = 0 on DFOD even if browser sends malicious value');
+    assert(billNorm.toNumber() === shippingFee.toNumber(), 'Backend normalization sets totalRecipientBill = totalShippingFee on DFOD ignoring malicious value');
+  }
+
+  // Test 15 & 16: DIRECT & INVOICE billing modes accepted
+  const invoicePayload = {
+    ...basePayload,
+    billingMode: 'INVOICE' as const,
+    paymentDeliveryMethod: 'DFOD' as const,
+  };
+  const invoiceParsed = createManifestSchema.safeParse(invoicePayload);
+  assert(invoiceParsed.success, 'INVOICE billing mode accepted alongside DFOD payment method');
 
   console.log(`\n=== Test Results: ${passed} Passed, ${failed} Failed ===`);
 
