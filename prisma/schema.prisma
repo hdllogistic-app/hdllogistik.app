@@ -257,6 +257,21 @@ model WorkLocation {
   @@index([name])
 }
 
+model ShippingRate {
+  id        String   @id @default(uuid())
+  province  String
+  city      String
+  ratePerKg Decimal  @db.Decimal(18, 2)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([province, city])
+  @@index([province])
+  @@index([city])
+  @@index([active])
+}
+
 // ==========================================
 // MANIFEST & ORDER LOGISTICS
 // ==========================================
