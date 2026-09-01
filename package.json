@@ -20,7 +20,8 @@
     "test:delivery-monitoring": "tsx src/modules/monitoring/__tests__/delivery-monitoring.test.ts",
     "test:finance": "tsx src/modules/finance/__tests__/finance.test.ts",
     "test:payment": "tsx src/modules/payment/__tests__/payment.test.ts",
-    "test:invoice": "tsx src/modules/invoice/__tests__/invoice.test.ts"
+    "test:invoice": "tsx src/modules/invoice/__tests__/invoice.test.ts",
+    "test:accounts": "tsx src/modules/settings/__tests__/accounts.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1123.0",

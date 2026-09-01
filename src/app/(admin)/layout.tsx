@@ -139,6 +139,12 @@ export default function AdminLayout({
               >
                 Pengaturan Armada
               </Link>
+              <Link
+                href="/settings/accounts"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+              >
+                Pengaturan Akun
+              </Link>
             </div>
           </nav>
         </aside>

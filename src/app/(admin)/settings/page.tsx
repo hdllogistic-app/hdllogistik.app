@@ -107,6 +107,25 @@ export default async function SettingsLandingPage() {
             </p>
           </div>
         </Link>
+
+        {/* Pengaturan Akun */}
+        <Link
+          href="/settings/accounts"
+          className="group p-6 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-sky-500/40 hover:bg-slate-900 transition-all shadow-xl space-y-4"
+        >
+          <div className="flex justify-between items-start">
+            <div className="p-3.5 bg-sky-500/10 border border-sky-500/20 text-sky-400 rounded-xl group-hover:scale-105 transition-transform">
+              <UserCheck className="w-6 h-6" />
+            </div>
+            <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-sky-400 group-hover:translate-x-1 transition-all" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white group-hover:text-sky-400 transition">Pengaturan Akun</h3>
+            <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+              Kelola akses login akun Admin dan Driver operasional.
+            </p>
+          </div>
+        </Link>
       </div>
     </div>
   );
