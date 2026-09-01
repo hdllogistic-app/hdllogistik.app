@@ -18,9 +18,12 @@
     "test:scheduling": "tsx src/modules/manifest/__tests__/scheduling.test.ts",
     "test:settings": "tsx src/modules/settings/__tests__/settings.test.ts",
     "test:delivery-monitoring": "tsx src/modules/monitoring/__tests__/delivery-monitoring.test.ts",
-    "test:finance": "tsx src/modules/finance/__tests__/finance.test.ts"
+    "test:finance": "tsx src/modules/finance/__tests__/finance.test.ts",
+    "test:payment": "tsx src/modules/payment/__tests__/payment.test.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1123.0",
+    "@aws-sdk/s3-request-presigner": "^3.1123.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "bcryptjs": "^3.0.3",

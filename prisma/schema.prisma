@@ -460,16 +460,24 @@ model ManifestPaymentTransaction {
 }
 
 model ManifestPaymentAdjustment {
-  id                String          @id @default(uuid())
-  paymentId         String
-  payment           ManifestPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  originalExpected  Decimal         @db.Decimal(18, 2)
-  correctedExpected Decimal         @db.Decimal(18, 2)
-  adjustmentAmount  Decimal         @db.Decimal(18, 2)
-  reason            String
-  correctedById     String
-  correctedBy       User            @relation("PaymentCorrector", fields: [correctedById], references: [id], onDelete: Restrict)
-  createdAt         DateTime        @default(now())
+  id                            String          @id @default(uuid())
+  paymentId                     String
+  payment                       ManifestPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  originalExpected              Decimal         @db.Decimal(18, 2)
+  correctedExpected             Decimal         @db.Decimal(18, 2)
+  adjustmentAmount              Decimal         @db.Decimal(18, 2)
+  previousPaymentDeliveryMethod String?
+  newPaymentDeliveryMethod      String?
+  previousShippingFee           Decimal?        @db.Decimal(18, 2)
+  newShippingFee                Decimal?        @db.Decimal(18, 2)
+  previousCodAmount             Decimal?        @db.Decimal(18, 2)
+  newCodAmount                  Decimal?        @db.Decimal(18, 2)
+  settlementMethod              PaymentMethod?
+  transferProofObjectKey        String?
+  reason                        String
+  correctedById                 String
+  correctedBy                   User            @relation("PaymentCorrector", fields: [correctedById], references: [id], onDelete: Restrict)
+  createdAt                     DateTime        @default(now())
 
   @@index([paymentId])
 }
