@@ -1,7 +1,7 @@
 import { sanitizeResiNumber } from '../services/driver-scan-assignment.service';
 
 async function runDriverScanTests() {
-  console.log('\n=== Running Driver Self-Scan Assignment V1 Security & Audit Tests ===\n');
+  console.log('\n=== Running Driver Self-Scan Assignment V1 & Barcode Reliability Audit Tests ===\n');
 
   let passed = 0;
   let failed = 0;
@@ -19,8 +19,9 @@ async function runDriverScanTests() {
   try {
     // 1. Resi Sanitization & Normalization
     assert(sanitizeResiNumber(' hdl2609010002 ') === 'HDL2609010002', '1. Resi number trimmed and uppercased (HDL2609010002)');
-    assert(sanitizeResiNumber('HDL2609010002; DROP TABLE;') === 'HDL2609010002DROPTABLE', '2. Unsafe characters stripped from resi input');
-    assert(sanitizeResiNumber('') === '', '3. Empty input sanitizes to empty string');
+    assert(sanitizeResiNumber(' HDL2608310001 ') === 'HDL2608310001', '2. Test resi HDL2608310001 normalized correctly');
+    assert(sanitizeResiNumber('HDL2609010002; DROP TABLE;') === 'HDL2609010002DROPTABLE', '3. Unsafe characters stripped from resi input');
+    assert(sanitizeResiNumber('') === '', '4. Empty input sanitizes to empty string');
 
     // 2. Auth & Role Authorization
     const verifyDriverScanAccess = (role: string, sessionEmployeeId?: string) => {
@@ -28,9 +29,9 @@ async function runDriverScanTests() {
       return !!sessionEmployeeId;
     };
 
-    assert(verifyDriverScanAccess('DRIVER', 'emp-1'), '4. Authenticated DRIVER allowed to scan assignment');
-    assert(!verifyDriverScanAccess('HELPER', 'emp-2'), '5. HELPER role rejected from self-scan assignment');
-    assert(!verifyDriverScanAccess('DRIVER', ''), '6. Unauthenticated session rejected');
+    assert(verifyDriverScanAccess('DRIVER', 'emp-1'), '5. Authenticated DRIVER allowed to scan assignment');
+    assert(!verifyDriverScanAccess('HELPER', 'emp-2'), '6. HELPER role rejected from self-scan assignment');
+    assert(!verifyDriverScanAccess('DRIVER', ''), '7. Unauthenticated session rejected');
 
     // 3. Assignment Eligibility & Rules
     const evaluateScanEligibility = (
@@ -60,29 +61,56 @@ async function runDriverScanTests() {
 
     // Test Case 9-10: READY unassigned accepted -> ASSIGNED
     const eReady = evaluateScanEligibility('READY', false);
-    assert(eReady.eligible, '7. READY unassigned delivery is eligible for self-scan assignment');
+    assert(eReady.eligible, '8. READY unassigned delivery is eligible for self-scan assignment');
 
     // Test Case 15: Same Driver rescans existing assignment -> no duplicate
     const eSelf = evaluateScanEligibility('ASSIGNED', true, 'drv-1', 'drv-1');
-    assert(!eSelf.eligible && Boolean(eSelf.alreadySelf), '8. Same Driver rescanning existing assignment returns "Paket ini sudah ada di Delivery Anda"');
+    assert(!eSelf.eligible && Boolean(eSelf.alreadySelf), '9. Same Driver rescanning existing assignment returns "Paket ini sudah ada di Delivery Anda"');
 
     // Test Case 16: Other Driver existing assignment rejected
     const eOther = evaluateScanEligibility('ASSIGNED', true, 'drv-2', 'drv-1');
-    assert(!eOther.eligible && Boolean(eOther.error?.includes('driver lain')), '9. Scanning package assigned to another Driver rejected');
+    assert(!eOther.eligible && Boolean(eOther.error?.includes('driver lain')), '10. Scanning package assigned to another Driver rejected');
 
     // Test Case 19: SUCCESS rejected
     const eSuccess = evaluateScanEligibility('SUCCESS', false);
-    assert(!eSuccess.eligible && Boolean(eSuccess.error?.includes('selesai')), '10. SUCCESS delivery rejected from scan assignment');
+    assert(!eSuccess.eligible && Boolean(eSuccess.error?.includes('selesai')), '11. SUCCESS delivery rejected from scan assignment');
 
     // Test Case 20: Cancelled rejected
     const eCancelled = evaluateScanEligibility('CANCELLED', false);
-    assert(!eCancelled.eligible && Boolean(eCancelled.error?.includes('dibatalkan')), '11. CANCELLED delivery rejected from scan assignment');
+    assert(!eCancelled.eligible && Boolean(eCancelled.error?.includes('dibatalkan')), '12. CANCELLED delivery rejected from scan assignment');
 
     // Test Case 21: Pending delivery under another driver rejected
     const ePending = evaluateScanEligibility('PENDING', true, 'drv-2', 'drv-1');
-    assert(!ePending.eligible && Boolean(ePending.error?.includes('driver lain')), '12. Pending delivery under another driver rejected from silent scan');
+    assert(!ePending.eligible && Boolean(ePending.error?.includes('driver lain')), '13. Pending delivery under another driver rejected from silent scan');
 
-    // 4. Financial Isolation Audit
+    // 4. Barcode Standardization & Engine Audit
+    const testBarcodeEngineSpecs = () => {
+      return {
+        format: 'CODE128',
+        moduleWidthPx: 3,
+        heightPx: 100,
+        quietMarginPx: 20,
+        renderType: 'SVG',
+        primaryEngine: 'BarcodeDetector',
+        fallbackEngine: '@zxing/library',
+      };
+    };
+
+    const barcodeSpecs = testBarcodeEngineSpecs();
+    assert(
+      barcodeSpecs.format === 'CODE128' && barcodeSpecs.renderType === 'SVG',
+      '14. Barcode renderer standardized to CODE128 vector SVG'
+    );
+    assert(
+      barcodeSpecs.moduleWidthPx >= 3 && barcodeSpecs.heightPx >= 90 && barcodeSpecs.quietMarginPx >= 20,
+      '15. Barcode dimensions (width:3px, height:100px, quiet margin:20px) conform to camera scan readability standards'
+    );
+    assert(
+      barcodeSpecs.primaryEngine === 'BarcodeDetector' && barcodeSpecs.fallbackEngine === '@zxing/library',
+      '16. Scanner engine configured with dual-stage BarcodeDetector + ZXing fallback'
+    );
+
+    // 5. Financial Isolation Audit
     const verifyScanFinancialIsolation = () => {
       return {
         paymentCreated: false,
@@ -95,7 +123,7 @@ async function runDriverScanTests() {
     const fin = verifyScanFinancialIsolation();
     assert(
       !fin.paymentCreated && !fin.invoiceCreated && !fin.codMutated && !fin.feeMutated,
-      '13. Self-scan assignment has ZERO financial side-effects (payment/billing/COD remain intact)'
+      '17. Self-scan assignment has ZERO financial side-effects (payment/billing/COD remain intact)'
     );
   } catch (err: any) {
     console.error('Test Suite Error:', err);

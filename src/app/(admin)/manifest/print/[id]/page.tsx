@@ -83,10 +83,7 @@ export default async function ManifestPrintPage({ params, searchParams }: PrintP
             <p className="text-xs text-slate-500 mt-1">Tanggal: {formattedDate}</p>
           </div>
           <div className="flex flex-col items-end">
-            <BarcodeRenderer value={manifest.resiNumber} className="max-h-16" />
-            <div className="text-sm font-mono font-bold tracking-widest mt-1">
-              {manifest.resiNumber}
-            </div>
+            <BarcodeRenderer value={manifest.resiNumber} className="max-w-[280px]" />
           </div>
         </div>
 

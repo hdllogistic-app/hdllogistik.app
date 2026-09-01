@@ -18,7 +18,10 @@ import {
   X,
   ShieldAlert,
   ChevronRight,
+  Zap,
+  ZapOff,
 } from 'lucide-react';
+import { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } from '@zxing/library';
 
 interface ScanResiPreview {
   resiNumber: string;
@@ -43,12 +46,21 @@ export default function DriverScanPage() {
 
   // Camera & Stream
   const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+
+  // Torch / Flashlight State
+  const [torchSupported, setTorchSupported] = useState<boolean>(false);
+  const [torchOn, setTorchOn] = useState<boolean>(false);
 
   // Lock / Debounce state for scanning
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [scannedResi, setScannedResi] = useState<string | null>(null);
+  const [detectedBadge, setDetectedBadge] = useState<boolean>(false);
+
+  // Focus Helper Timer (>5 seconds warning)
+  const [showSlowScanTip, setShowSlowScanTip] = useState<boolean>(false);
 
   // Resi Preview State
   const [preview, setPreview] = useState<ScanResiPreview | null>(null);
@@ -65,10 +77,8 @@ export default function DriverScanPage() {
   const [isManualOpen, setIsManualOpen] = useState<boolean>(false);
   const [manualResiInput, setManualResiInput] = useState<string>('');
 
-  // Start Camera Stream
+  // 1. Start Camera Stream with Ideal HD Resolution & Facing Environment
   useEffect(() => {
-    let stream: MediaStream | null = null;
-
     async function startCamera() {
       setCameraError(null);
       try {
@@ -77,14 +87,31 @@ export default function DriverScanPage() {
           return;
         }
 
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
         });
+
+        mediaStreamRef.current = stream;
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play();
+          await videoRef.current.play();
           setCameraActive(true);
+        }
+
+        // Check Torch Support
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          // @ts-ignore
+          const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+          // @ts-ignore
+          if (capabilities.torch) {
+            setTorchSupported(true);
+          }
         }
       } catch (err: any) {
         console.error('Camera Access Error:', err);
@@ -97,23 +124,59 @@ export default function DriverScanPage() {
     startCamera();
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
   }, []);
 
-  // Barcode Detection Loop (Using Browser-native BarcodeDetector when supported)
+  // 5-second slow scan tip timer
+  useEffect(() => {
+    let timer: any = null;
+    if (cameraActive && !isLocked) {
+      timer = setTimeout(() => {
+        setShowSlowScanTip(true);
+      }, 5000);
+    } else {
+      setShowSlowScanTip(false);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [cameraActive, isLocked]);
+
+  // Toggle Torch / Flashlight
+  const toggleTorch = async () => {
+    if (!mediaStreamRef.current) return;
+    const track = mediaStreamRef.current.getVideoTracks()[0];
+    if (track) {
+      try {
+        const nextState = !torchOn;
+        // @ts-ignore
+        await track.applyConstraints({ advanced: [{ torch: nextState }] });
+        setTorchOn(nextState);
+      } catch (e) {
+        console.error('Torch Toggle Error:', e);
+      }
+    }
+  };
+
+  // 2. Barcode Scanner Engine: Native BarcodeDetector + ZXing Fallback
   useEffect(() => {
     let intervalId: any = null;
+    let zxingControls: any = null;
 
     if (cameraActive && !isLocked) {
+      let isNativeDetectorAvailable = false;
+
+      // Primary: Native Browser BarcodeDetector API
       if ('BarcodeDetector' in window) {
         try {
-          // @ts-ignore - Browser-native BarcodeDetector API
+          // @ts-ignore
           const detector = new window.BarcodeDetector({
-            formats: ['code_128', 'code_39', 'qr_code', 'ean_13', 'data_matrix'],
+            formats: ['code_128', 'code_39'],
           });
+          isNativeDetectorAvailable = true;
 
           intervalId = setInterval(async () => {
             if (videoRef.current && videoRef.current.readyState === 4 && !isLocked) {
@@ -126,26 +189,67 @@ export default function DriverScanPage() {
                   }
                 }
               } catch (err) {
-                // Ignore detection errors during stream
+                // Ignore detection frame error
               }
             }
-          }, 300);
+          }, 200);
         } catch (e) {
-          console.log('BarcodeDetector init fallback', e);
+          isNativeDetectorAvailable = false;
+        }
+      }
+
+      // Secondary Fallback Engine: @zxing/library
+      if (!isNativeDetectorAvailable && videoRef.current) {
+        try {
+          const hints = new Map();
+          hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+            BarcodeFormat.CODE_128,
+            BarcodeFormat.CODE_39,
+          ]);
+          hints.set(DecodeHintType.TRY_HARDER, true);
+
+          const codeReader = new BrowserMultiFormatReader(hints);
+          codeReader
+            .decodeFromVideoDevice(null, videoRef.current, (result, err) => {
+              if (result && !isLocked) {
+                const text = result.getText();
+                if (text && text.trim().toUpperCase().startsWith('HDL')) {
+                  handleBarcodeDetected(text.trim());
+                }
+              }
+            })
+            .catch((e) => {
+              console.log('ZXing decode init error:', e);
+            });
+        } catch (err) {
+          console.error('ZXing Engine Error:', err);
         }
       }
     }
 
     return () => {
       if (intervalId) clearInterval(intervalId);
+      if (zxingControls && typeof zxingControls.stop === 'function') {
+        zxingControls.stop();
+      }
     };
   }, [cameraActive, isLocked]);
 
   const handleBarcodeDetected = (rawResi: string) => {
     if (isLocked) return;
-    setIsLocked(true); // Lock scanner from repeated reads
+    setIsLocked(true); // Lock scanner immediately to prevent duplicate requests
+
     const cleanResi = rawResi.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
     setScannedResi(cleanResi);
+    setDetectedBadge(true);
+
+    // Vibration Feedback
+    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(100);
+      } catch (e) {}
+    }
+
     performLookup(cleanResi);
   };
 
@@ -207,6 +311,7 @@ export default function DriverScanPage() {
 
   const handleScanNext = () => {
     setIsLocked(false);
+    setDetectedBadge(false);
     setScannedResi(null);
     setPreview(null);
     setLookupError(null);
@@ -215,6 +320,7 @@ export default function DriverScanPage() {
     setAssignedDeliveryId(null);
     setManualResiInput('');
     setIsManualOpen(false);
+    setShowSlowScanTip(false);
   };
 
   const handleManualSubmit = (e: React.FormEvent) => {
@@ -250,9 +356,7 @@ export default function DriverScanPage() {
             <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
             <div>
               <span className="block font-black text-white text-base">{assignSuccessMessage}</span>
-              <span className="text-xs text-emerald-300 font-mono">
-                Resi: {scannedResi}
-              </span>
+              <span className="text-xs text-emerald-300 font-mono">Resi: {scannedResi}</span>
             </div>
           </div>
 
@@ -287,25 +391,43 @@ export default function DriverScanPage() {
         </div>
       )}
 
-      {/* CAMERA SCANNER VIEWPORT */}
+      {/* CAMERA SCANNER VIEWPORT WITH WIDE 1D SCAN BOX & TORCH */}
       {!assignSuccessMessage && (
         <div className="relative w-full aspect-[4/3] bg-black border-2 border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
+          <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
 
-          {/* Scanner Overlay Box */}
-          <div className="absolute inset-0 border-[3px] border-sky-400/40 rounded-2xl pointer-events-none flex flex-col items-center justify-center">
-            <div className="w-64 h-32 border-2 border-sky-400 rounded-xl bg-sky-500/5 relative flex items-center justify-center shadow-[0_0_20px_rgba(56,189,248,0.3)]">
-              <div className="w-full h-0.5 bg-sky-400 shadow-[0_0_8px_#38bdf8] animate-pulse" />
+          {/* WIDE 1D BARCODE SCANNER OVERLAY BOX (~90% WIDTH) */}
+          <div className="absolute inset-0 border-[3px] border-sky-400/30 rounded-2xl pointer-events-none flex flex-col items-center justify-center p-4">
+            <div className="w-[92%] h-28 border-2 border-sky-400 rounded-2xl bg-sky-500/10 relative flex items-center justify-center shadow-[0_0_25px_rgba(56,189,248,0.4)]">
+              <div className="w-full h-0.5 bg-sky-400 shadow-[0_0_12px_#38bdf8] animate-pulse" />
+              <span className="absolute bottom-2 text-[10px] font-bold text-sky-200 tracking-wider uppercase bg-slate-950/80 px-2 py-0.5 rounded">
+                Arahkan barcode ke dalam kotak
+              </span>
             </div>
-            <span className="text-[11px] font-bold text-slate-200 bg-slate-950/80 px-3 py-1 rounded-full mt-3 border border-slate-800">
-              {isLocked ? 'Scanning Dikunci...' : 'Arahkan kamera ke barcode resi HDL'}
+
+            <span className="text-[11px] font-bold text-slate-200 bg-slate-950/90 px-3.5 py-1 rounded-full mt-3 border border-slate-800 shadow-md">
+              {detectedBadge
+                ? `✓ Barcode ditemukan: ${scannedResi}`
+                : isLocked
+                ? 'Scanning Diproses...'
+                : 'Mencari barcode...'}
             </span>
           </div>
+
+          {/* Flashlight Torch Toggle */}
+          {torchSupported && (
+            <button
+              type="button"
+              onClick={toggleTorch}
+              className={`absolute top-3 right-3 p-2.5 rounded-full border shadow-xl transition ${
+                torchOn
+                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-amber-400/40'
+                  : 'bg-slate-900/80 text-slate-300 border-slate-700'
+              }`}
+            >
+              {torchOn ? <Zap className="w-5 h-5 fill-current" /> : <ZapOff className="w-5 h-5" />}
+            </button>
+          )}
 
           {cameraError && (
             <div className="absolute inset-0 bg-slate-950/90 p-6 flex flex-col items-center justify-center text-center space-y-3">
@@ -316,17 +438,44 @@ export default function DriverScanPage() {
         </div>
       )}
 
+      {/* FOCUS UX TIPS & SLOW SCAN ASSISTANT */}
+      {!assignSuccessMessage && (
+        <div className="space-y-2">
+          <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between text-[11px] text-slate-300">
+            <span className="font-semibold">💡 Jaga jarak ±15–30 cm dari barcode.</span>
+            {torchSupported && (
+              <span className="text-slate-400 font-mono text-[10px]">
+                {torchOn ? 'Flash On' : 'Gunakan Flash jika gelap'}
+              </span>
+            )}
+          </div>
+
+          {showSlowScanTip && !isLocked && (
+            <div className="p-3 bg-amber-950/50 border border-amber-800/60 rounded-xl text-amber-200 text-xs flex items-center justify-between animate-fadeIn">
+              <span>Sulit membaca barcode? Dekatkan kamera atau gunakan input manual.</span>
+              <button
+                type="button"
+                onClick={() => setIsManualOpen(true)}
+                className="px-2.5 py-1 bg-amber-500 text-slate-950 font-bold rounded-lg text-[11px] shrink-0 ml-2"
+              >
+                Manual
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* MANUAL RESI INPUT TRIGGER */}
       {!assignSuccessMessage && (
-        <div className="flex justify-between items-center px-1">
-          <span className="text-xs text-slate-400 font-semibold">Barcode sulit terbaca?</span>
+        <div className="flex justify-between items-center px-1 pt-1">
+          <span className="text-xs text-slate-400 font-semibold">Barcode rusak / pudar?</span>
           <button
             type="button"
             onClick={() => setIsManualOpen(true)}
-            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-sky-400 border border-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-sky-400 border border-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-md"
           >
             <Keyboard className="w-4 h-4" />
-            <span>Masukkan Manual</span>
+            <span>Masukkan Nomor Resi Manual</span>
           </button>
         </div>
       )}
@@ -474,7 +623,7 @@ export default function DriverScanPage() {
                   required
                   value={manualResiInput}
                   onChange={(e) => setManualResiInput(e.target.value)}
-                  placeholder="Contoh: HDL2609010002"
+                  placeholder="Contoh: HDL2608310001"
                   className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono font-bold text-sm uppercase"
                 />
               </div>
