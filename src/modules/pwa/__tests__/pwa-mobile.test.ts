@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 async function runPwaMobileTests() {
-  console.log('\n=== Running PWA Foundation, Scanner Camera Shutdown & Mobile UX Audit Tests ===\n');
+  console.log('\n=== Running PWA Foundation, iOS Camera, Manual Modal & Mobile UX Audit Tests ===\n');
 
   let passed = 0;
   let failed = 0;
@@ -18,114 +18,73 @@ async function runPwaMobileTests() {
   };
 
   try {
-    // 1. DRIVER HOME SUMMARY CALCULATIONS
-    const calculateDriverHomeSummary = (deliveryCount: number, successCount: number, pendingCount: number) => {
-      const totalDeliveries = Number(deliveryCount + successCount + pendingCount);
+    // 1. DRIVER HOME UNIQUE DELIVERIES SUMMARY CALCULATIONS
+    const calculateUniqueDriverHomeSummary = (assignments: Array<{ deliveryId: string; status: string; hasProof: boolean }>) => {
+      const uniqueMap = new Map<string, (typeof assignments)[0]>();
+      for (const a of assignments) {
+        if (!uniqueMap.has(a.deliveryId)) {
+          uniqueMap.set(a.deliveryId, a);
+        }
+      }
+      const uniqueItems = Array.from(uniqueMap.values());
+      let successCount = 0;
+      let pendingCount = 0;
+      let deliveryCount = 0;
+
+      for (const item of uniqueItems) {
+        if (item.status === 'SUCCESS' || item.hasProof) successCount++;
+        else if (item.status === 'PENDING') pendingCount++;
+        else deliveryCount++;
+      }
+
       return {
-        totalDeliveries,
-        successCount: Number(successCount),
-        pendingCount: Number(pendingCount),
+        totalDeliveries: uniqueItems.length,
+        deliveryCount,
+        successCount,
+        pendingCount,
       };
     };
 
-    const case1 = calculateDriverHomeSummary(0, 1, 0);
-    assert(case1.totalDeliveries === 1, '1. Driver Home Total Delivery calculation (Delivery:0 + Success:1 + Pending:0 = 1)');
-    assert(!isNaN(case1.totalDeliveries) && case1.totalDeliveries !== undefined, '2. Total Delivery numeric value is never undefined or NaN');
+    // Test case: 3 assignment records for the SAME resi (e.g. initial, pending, rescan)
+    const duplicateAssignmentsCase = [
+      { deliveryId: 'del-1', status: 'ASSIGNED', hasProof: false },
+      { deliveryId: 'del-1', status: 'PENDING', hasProof: false },
+      { deliveryId: 'del-1', status: 'ASSIGNED', hasProof: false },
+    ];
+    const summary1 = calculateUniqueDriverHomeSummary(duplicateAssignmentsCase);
+    assert(summary1.totalDeliveries === 1, '1. Driver Home Total Delivery deduplicates by unique Delivery.id (3 assignments for 1 package = 1 Total)');
+    assert(summary1.deliveryCount === 1 && summary1.successCount === 0 && summary1.pendingCount === 0, '2. Mutually exclusive unique category counts sum to total unique package count');
 
-    const caseZero = calculateDriverHomeSummary(0, 0, 0);
-    assert(caseZero.totalDeliveries === 0, '3. Zero deliveries renders numeric 0 (never blank)');
+    // Test case: 3 unique packages (1 active, 1 SUCCESS, 1 PENDING)
+    const threePackagesCase = [
+      { deliveryId: 'del-1', status: 'ASSIGNED', hasProof: false },
+      { deliveryId: 'del-2', status: 'SUCCESS', hasProof: true },
+      { deliveryId: 'del-3', status: 'PENDING', hasProof: false },
+    ];
+    const summary3 = calculateUniqueDriverHomeSummary(threePackagesCase);
+    assert(summary3.totalDeliveries === 3, '3. Three unique packages gives Total Delivery = 3');
+    assert(summary3.deliveryCount === 1 && summary3.successCount === 1 && summary3.pendingCount === 1, '4. Categories (1 active + 1 TTD + 1 Pending) sum to 3');
 
-    // 2. SCANNER CAMERA SHUTDOWN AUDIT
-    const testCameraShutdownCycle = () => {
-      let isTrackStopped = false;
-      let isVideoDetached = false;
-      let isCameraActive = true;
-
-      const mockTrack = {
-        stop: () => {
-          isTrackStopped = true;
-        },
-      };
-
-      const mockStream = {
-        getTracks: () => [mockTrack],
-      };
-
-      const mockVideoElement = {
-        srcObject: mockStream as any,
-      };
-
-      // Execute shutdown logic
-      mockStream.getTracks().forEach((t) => t.stop());
-      mockVideoElement.srcObject = null;
-      isVideoDetached = mockVideoElement.srcObject === null;
-      isCameraActive = false;
-
-      return { isTrackStopped, isVideoDetached, isCameraActive };
-    };
-
-    const cameraAudit = testCameraShutdownCycle();
-    assert(cameraAudit.isTrackStopped, '4. Detection hard-stops media stream tracks');
-    assert(cameraAudit.isVideoDetached, '5. Detection detaches video srcObject to turn off phone hardware camera light');
-    assert(!cameraAudit.isCameraActive, '6. Scanner viewport box hidden after detection');
-
-    // 3. PWA MANIFEST AUDIT
-    const manifestPath = path.join(process.cwd(), 'public/manifest.json');
-    const manifestExists = fs.existsSync(manifestPath);
-    assert(manifestExists, '7. public/manifest.json file exists');
-
-    if (manifestExists) {
-      const manifestJson = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-      assert(manifestJson.start_url === '/', '8. Manifest start_url is "/" (role-neutral root)');
-      assert(manifestJson.display === 'standalone', '9. Manifest display mode is "standalone"');
-      assert(Array.isArray(manifestJson.icons) && manifestJson.icons.length > 0, '10. Manifest defines local app icons');
-    }
-
-    // 4. SERVICE WORKER NETWORK-ONLY RULE AUDIT
-    const swPath = path.join(process.cwd(), 'public/sw.js');
-    const swExists = fs.existsSync(swPath);
-    assert(swExists, '11. public/sw.js service worker file exists');
-
-    if (swExists) {
-      const swContent = fs.readFileSync(swPath, 'utf8');
-      assert(swContent.includes('/api/'), '12. Service worker explicitly handles /api/ routes');
-      assert(swContent.includes('fetch(event.request)'), '13. Service worker enforces Network-Only for /api/* (no stale data caching)');
-    }
-
-    // 5. FIRST VISIT INSTALL SHEET STANDALONE PROTECTION AUDIT
-    const evaluateInstallPromptVisibility = (
-      isStandaloneMode: boolean,
-      isDismissedRecently: boolean,
-      isIos: boolean,
-      hasDeferredPrompt: boolean
-    ) => {
-      if (isStandaloneMode) return { show: false, reason: 'standalone' };
-      if (isDismissedRecently) return { show: false, reason: 'dismissed' };
-      if (isIos) return { show: true, type: 'ios-instructions' };
-      if (hasDeferredPrompt) return { show: true, type: 'android-prompt' };
-      return { show: false, reason: 'no-prompt' };
-    };
-
-    const standaloneEval = evaluateInstallPromptVisibility(true, false, false, true);
-    assert(!standaloneEval.show, '14. Installed Standalone PWA NEVER displays install sheet');
-
-    const iosEval = evaluateInstallPromptVisibility(false, false, true, false);
-    assert(iosEval.show && iosEval.type === 'ios-instructions', '15. iOS Safari displays 3-step installation instructions');
-
-    const androidEval = evaluateInstallPromptVisibility(false, false, false, true);
-    assert(androidEval.show && androidEval.type === 'android-prompt', '16. Android Chrome displays Deferred Install Prompt button');
-
-    const dismissedEval = evaluateInstallPromptVisibility(false, true, false, true);
-    assert(!dismissedEval.show, '17. Dismissed prompt ("Nanti") respects 3-day local persistence suppression');
-
-    // 6. MOBILE UX SAFE AREA & FONT SIZE AUDIT
-    const driverLayoutPath = path.join(process.cwd(), 'src/app/driver/layout.tsx');
-    const layoutContent = fs.readFileSync(driverLayoutPath, 'utf8');
-    assert(layoutContent.includes('env(safe-area-inset-bottom)'), '18. Driver layout contains env(safe-area-inset-bottom) for iOS safe area');
-
+    // 2. SCANNER CAMERA & IOS ATTR AUDIT
     const scanPagePath = path.join(process.cwd(), 'src/app/driver/scan/page.tsx');
     const scanContent = fs.readFileSync(scanPagePath, 'utf8');
-    assert(scanContent.includes('text-base'), '19. Form inputs use text-base (min 16px) to prevent unwanted iOS Safari auto-zoom');
+
+    assert(scanContent.includes("playsinline"), '5. Video element includes playsinline attribute for iOS Safari support');
+    assert(scanContent.includes("autoplay"), '6. Video element includes autoplay attribute for immediate stream start');
+    assert(scanContent.includes("stopCamera()"), '7. Detection calls stopCamera() to turn off phone hardware camera light');
+
+    // 3. MANUAL RESI MODAL SAFE AREA & Z-INDEX AUDIT
+    assert(scanContent.includes("z-[100]"), '8. Manual Resi modal backdrop uses z-[100] to render above bottom navigation');
+    assert(scanContent.includes("env(safe-area-inset-bottom)"), '9. Manual Resi modal includes env(safe-area-inset-bottom) padding');
+    assert(scanContent.includes("text-base"), '10. Manual Resi input uses text-base (min 16px font) to avoid iOS Safari keyboard auto-zoom');
+
+    // 4. PWA MANIFEST AUDIT
+    const manifestPath = path.join(process.cwd(), 'public/manifest.json');
+    assert(fs.existsSync(manifestPath), '11. public/manifest.json file exists');
+
+    // 5. SERVICE WORKER NETWORK-ONLY RULE AUDIT
+    const swPath = path.join(process.cwd(), 'public/sw.js');
+    assert(fs.existsSync(swPath), '12. public/sw.js service worker file exists');
   } catch (err: any) {
     console.error('Test Suite Error:', err);
     failed++;

@@ -72,15 +72,34 @@ export async function getDriverDeliveriesService(
       orderBy: { assignedAt: 'desc' },
     });
 
+    // Deduplicate assignments by unique Delivery.id for the selected operational date
+    const uniqueDeliveryMap = new Map<string, typeof assignments[0]>();
+    for (const a of assignments) {
+      const existing = uniqueDeliveryMap.get(a.deliveryId);
+      if (!existing) {
+        uniqueDeliveryMap.set(a.deliveryId, a);
+      } else {
+        const isExistingActive = existing.unassignedAt === null;
+        const isCurrentActive = a.unassignedAt === null;
+        if (!isExistingActive && isCurrentActive) {
+          uniqueDeliveryMap.set(a.deliveryId, a);
+        } else if (isExistingActive === isCurrentActive && a.assignedAt > existing.assignedAt) {
+          uniqueDeliveryMap.set(a.deliveryId, a);
+        }
+      }
+    }
+
+    const uniqueAssignments = Array.from(uniqueDeliveryMap.values());
+
     let actionableCount = 0;
     let successCount = 0;
     let pendingCount = 0;
 
-    const allMapped = assignments.map((a) => {
+    const allMapped = uniqueAssignments.map((a) => {
       const status = a.delivery.status;
       const hasProof = !!a.delivery.proof;
 
-      // MUTUALLY EXCLUSIVE CLASSIFICATION:
+      // MUTUALLY EXCLUSIVE CLASSIFICATION BASED ON UNIQUE DELIVERY ID:
       // 1. SUCCESS: status is SUCCESS or has DeliveryProof
       // 2. PENDING: not SUCCESS and status is PENDING
       // 3. ACTIONABLE DELIVERY: not SUCCESS, not PENDING, not CANCELLED (e.g. ASSIGNED/IN_DELIVERY)
@@ -132,12 +151,14 @@ export async function getDriverDeliveriesService(
       filteredItems = allMapped.filter((item) => item.isActionable);
     }
 
+    const totalUniqueDeliveries = uniqueAssignments.length;
+
     return {
       success: true,
       selectedDate: formattedDateStr,
       summary: {
-        totalDeliveries: assignments.length,
-        totalPackages: assignments.length,
+        totalDeliveries: totalUniqueDeliveries,
+        totalPackages: totalUniqueDeliveries,
         deliveryCount: actionableCount,
         successCount,
         pendingCount,

@@ -37,7 +37,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
       <main className="flex-1 p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] overflow-y-auto">{children}</main>
 
       {/* Mobile Bottom Navigation Bar with iOS Safe Area Padding */}
-      <nav className="fixed bottom-0 left-0 right-0 w-full max-w-md mx-auto bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex items-center justify-around z-50">
+      <nav className="fixed bottom-0 left-0 right-0 w-full max-w-md mx-auto bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex items-center justify-around z-40">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =
