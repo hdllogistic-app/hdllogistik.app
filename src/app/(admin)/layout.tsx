@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { AdminSidebar } from '@/components/layout/AdminSidebar';
 
 export default function AdminLayout({
   children,
@@ -7,26 +8,31 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col bg-slate-900 text-slate-100">
-      {/* Admin Desktop Header */}
-      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+    <div className="min-h-screen flex flex-col bg-[#F6F5F1] text-[#171717] font-sans antialiased">
+      {/* Admin Desktop Header - Clean Light Theme */}
+      <header className="border-b border-[#E8E7E3] bg-white px-6 py-3.5 flex items-center justify-between sticky top-0 z-50 shadow-sm">
         <div className="flex items-center space-x-3">
           <Link href="/" className="flex items-center space-x-3 group">
-            <div className="h-8 w-8 rounded-lg bg-sky-500 flex items-center justify-center font-bold text-white shadow-lg shadow-sky-500/20 group-hover:bg-sky-400 transition">
+            <div className="h-8 w-8 rounded-lg bg-[#171717] flex items-center justify-center font-black text-amber-400 text-sm shadow-md group-hover:bg-[#262626] transition">
               H
             </div>
             <div>
-              <h1 className="font-bold text-lg leading-none tracking-tight">HDL LOGISTIK</h1>
-              <span className="text-xs text-sky-400 font-medium">Admin & Operational Web</span>
+              <h1 className="font-extrabold text-base leading-none tracking-tight text-[#171717]">
+                HDL LOGISTIK
+              </h1>
+              <span className="text-[11px] text-neutral-500 font-medium">
+                Admin & Operational Web
+              </span>
             </div>
           </Link>
         </div>
-        <div className="flex items-center space-x-4 text-xs text-slate-400">
-          <span className="px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+        <div className="flex items-center space-x-4 text-xs text-neutral-500">
+          <span className="px-3 py-1 rounded-full bg-[#F6F5F1] border border-[#E8E7E3] text-neutral-700 font-mono font-medium">
             Timezone: Asia/Jakarta
           </span>
-          <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-            System Ready
+          <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>System Ready</span>
           </span>
         </div>
       </header>
@@ -34,132 +40,10 @@ export default function AdminLayout({
       {/* Main Admin Area */}
       <div className="flex-1 flex">
         {/* Desktop Sidebar */}
-        <aside className="w-64 border-r border-slate-800 bg-[#151515] p-4 hidden md:block shrink-0 flex flex-col justify-between">
-          <nav className="space-y-4 text-sm">
-            {/* Operasional */}
-            <div className="space-y-1">
-              <div className="px-3 py-1 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Operasional
-              </div>
-              <Link
-                href="/"
-                className="block px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition font-medium"
-              >
-                Dashboard
-              </Link>
-              <Link
-                href="/manifest/input"
-                className="block px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition font-medium"
-              >
-                Input Manifest
-              </Link>
-              <Link
-                href="/manifest"
-                className="block px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition font-medium"
-              >
-                Rincian Manifest
-              </Link>
-              <Link
-                href="/manifest/check"
-                className="block px-3 py-2 rounded-lg text-amber-400 bg-amber-500/10 border border-amber-500/20 font-bold transition flex items-center justify-between shadow-sm"
-              >
-                <span>Cek Manifest</span>
-                <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded font-mono font-bold">
-                  TRACK
-                </span>
-              </Link>
-              <Link
-                href="/monitoring/delivery"
-                className="block px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition font-medium"
-              >
-                Monitoring Delivery
-              </Link>
-            </div>
+        <AdminSidebar />
 
-            {/* Finance & Cashflow */}
-            <div className="space-y-1 border-t border-slate-800/80 pt-3">
-              <div className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Finance & Cashflow
-              </div>
-              <Link
-                href="/finance/operational-settlement"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
-              >
-                Operasional Settlement
-              </Link>
-              <Link
-                href="/finance/payment"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
-              >
-                Payment
-              </Link>
-              <Link
-                href="/finance/invoices"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
-              >
-                Invoice Penagihan
-              </Link>
-              <Link
-                href="/finance/cashflow"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
-              >
-                Cashflow
-              </Link>
-              <Link
-                href="/finance/attendance"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
-              >
-                Absensi
-              </Link>
-              <Link
-                href="/finance/salary-closing"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
-              >
-                Salary Closing
-              </Link>
-            </div>
-
-            {/* Pengaturan */}
-            <div className="space-y-1 border-t border-slate-800/80 pt-3">
-              <div className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Pengaturan
-              </div>
-              <Link
-                href="/settings/customers"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
-              >
-                Master Customer
-              </Link>
-              <Link
-                href="/settings/shipping-rates"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
-              >
-                Database Ongkir
-              </Link>
-              <Link
-                href="/settings/team"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
-              >
-                Pengaturan Team
-              </Link>
-              <Link
-                href="/settings/vehicles"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
-              >
-                Pengaturan Armada
-              </Link>
-              <Link
-                href="/settings/accounts"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
-              >
-                Pengaturan Akun
-              </Link>
-            </div>
-          </nav>
-        </aside>
-
-        {/* Content */}
-        <main className="flex-1 p-6 md:p-8 overflow-y-auto">
+        {/* Light Workspace Main Canvas */}
+        <main className="flex-1 p-6 md:p-8 bg-[#F6F5F1] overflow-y-auto min-h-[calc(100vh-65px)]">
           {children}
         </main>
       </div>

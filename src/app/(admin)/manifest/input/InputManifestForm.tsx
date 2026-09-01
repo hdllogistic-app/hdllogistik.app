@@ -488,13 +488,13 @@ export function InputManifestForm() {
       )}
 
       {/* Form Container */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden divide-y divide-slate-800/60">
+      <div className="bg-white border border-[#E8E7E3] rounded-2xl shadow-sm overflow-hidden divide-y divide-[#F0EEE8] text-[#171717]">
         
         {/* 1. DATA PENGIRIM */}
         <div className="p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
-              <User className="w-4 h-4" />
+            <div className="flex items-center gap-2 text-[#171717] font-bold text-sm uppercase tracking-wider">
+              <User className="w-4 h-4 text-[#171717]" />
               <span>1. Data Pengirim (Sender)</span>
             </div>
 
