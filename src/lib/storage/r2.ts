@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import crypto from 'crypto';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -44,6 +45,123 @@ export function getR2Client(): S3Client | null {
   });
 }
 
+// ==========================================
+// DEDICATED DELIVERY PROOF R2 BUCKET HELPERS
+// ==========================================
+
+export function getR2DeliveryConfig(): R2Config | null {
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_DELIVERY_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_DELIVERY_SECRET_ACCESS_KEY || process.env.R2_SECRET_ACCESS_KEY;
+  const bucketName = process.env.R2_DELIVERY_BUCKET_NAME;
+  const endpoint = process.env.R2_DELIVERY_ENDPOINT || process.env.R2_ENDPOINT || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
+
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName || !endpoint) {
+    return null;
+  }
+
+  return { accountId, accessKeyId, secretAccessKey, bucketName, endpoint };
+}
+
+export function isR2DeliveryConfigured(): boolean {
+  return getR2DeliveryConfig() !== null;
+}
+
+export function getR2DeliveryClient(): S3Client | null {
+  const config = getR2DeliveryConfig();
+  if (!config) return null;
+
+  return new S3Client({
+    region: 'auto',
+    endpoint: config.endpoint,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    },
+  });
+}
+
+export function generateDeliveryProofObjectKey(
+  driverEmployeeId: string,
+  deliveryId: string,
+  originalFilename: string
+): string {
+  const now = new Date();
+  const jkt = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const year = jkt.getFullYear();
+  const month = String(jkt.getMonth() + 1).padStart(2, '0');
+
+  const ext = originalFilename.split('.').pop()?.toLowerCase() || 'jpeg';
+  const randomUuid = crypto.randomUUID();
+
+  return `delivery-proofs/${year}/${month}/${driverEmployeeId}/${deliveryId}/proof-${randomUuid}.${ext}`;
+}
+
+export async function uploadDeliveryProofToR2(
+  objectKey: string,
+  buffer: Buffer,
+  mimeType: string
+): Promise<{ success: boolean; error?: string }> {
+  const client = getR2DeliveryClient();
+  const config = getR2DeliveryConfig();
+
+  if (!client || !config) {
+    return {
+      success: false,
+      error: 'Infrastruktur Cloudflare R2 untuk bukti serah terima (Delivery Proof) belum dikonfigurasi di environment produksi.',
+    };
+  }
+
+  try {
+    const command = new PutObjectCommand({
+      Bucket: config.bucketName,
+      Key: objectKey,
+      Body: buffer,
+      ContentType: mimeType,
+    });
+
+    await client.send(command);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[R2 Delivery Upload Error]', err);
+    return {
+      success: false,
+      error: `Gagal mengunggah bukti serah terima ke R2: ${err.message || 'Kesalahan koneksi'}`,
+    };
+  }
+}
+
+export async function getPresignedDeliveryProofUrl(
+  objectKey: string,
+  expiresInSeconds: number = 300
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  const client = getR2DeliveryClient();
+  const config = getR2DeliveryConfig();
+
+  if (!client || !config) {
+    return {
+      success: false,
+      error: 'Infrastruktur Cloudflare R2 delivery proof belum dikonfigurasi.',
+    };
+  }
+
+  try {
+    const command = new GetObjectCommand({
+      Bucket: config.bucketName,
+      Key: objectKey,
+    });
+
+    const url = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+    return { success: true, url };
+  } catch (err: any) {
+    console.error('[R2 Delivery Presigned URL Error]', err);
+    return {
+      success: false,
+      error: `Gagal membuat signed URL bukti serah terima: ${err.message || 'Kesalahan koneksi'}`,
+    };
+  }
+}
+
 export function validateProofFile(
   mimeType: string,
   sizeBytes: number
@@ -58,7 +176,7 @@ export function validateProofFile(
   if (sizeBytes > MAX_FILE_SIZE_BYTES) {
     return {
       valid: false,
-      error: 'Ukuran file terlalu besar. Maksimum ukuran bukti transfer adalah 5 MB.',
+      error: 'Ukuran file terlalu besar. Maksimum ukuran bukti foto adalah 5 MB.',
     };
   }
 
@@ -70,7 +188,7 @@ export function generateProofObjectKey(adjustmentId: string, originalFilename: s
   const jkt = new Date(now.getTime() + 7 * 60 * 60 * 1000);
   const year = jkt.getFullYear();
   const month = String(jkt.getMonth() + 1).padStart(2, '0');
-  
+
   const ext = originalFilename.split('.').pop()?.toLowerCase() || 'png';
   const randomUuid = crypto.randomUUID();
 

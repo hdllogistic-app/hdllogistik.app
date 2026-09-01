@@ -1,12 +1,31 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, use } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { ArrowLeft, MapPin, Phone, Navigation, Package, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+  ArrowLeft,
+  Package,
+  MapPin,
+  Phone,
+  MessageSquare,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Camera,
+  X,
+  UserCheck,
+  ExternalLink,
+  ShieldAlert,
+} from 'lucide-react';
+import {
+  formatWhatsAppUrl,
+  sanitizeLocationUrl,
+} from '@/modules/delivery/utils/delivery-utils';
 
-interface DeliveryDetailData {
+interface DeliveryDetailDTO {
   id: string;
+  manifestId: string;
   resiNumber: string;
   recipientName: string;
   recipientPhone: string;
@@ -27,175 +46,541 @@ interface DeliveryDetailData {
   } | null;
 }
 
-export default function DriverDeliveryDetailPage() {
-  const params = useParams();
-  const deliveryId = params?.deliveryId as string;
+export default function DriverDeliveryDetailPage({
+  params,
+}: {
+  params: Promise<{ deliveryId: string }>;
+}) {
+  const resolvedParams = use(params);
+  const deliveryId = resolvedParams.deliveryId;
+  const router = useRouter();
 
-  const [detail, setDetail] = useState<DeliveryDetailData | null>(null);
+  const [delivery, setDelivery] = useState<DeliveryDetailDTO | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchDetail() {
-      if (!deliveryId) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/driver/deliveries/${deliveryId}`);
-        const data = await res.json();
-        if (data.success) {
-          setDetail(data.delivery);
-        } else {
-          setError(data.error || 'Gagal memuat detail delivery.');
+  // TTD Modal State
+  const [isTtdModalOpen, setIsTtdModalOpen] = useState<boolean>(false);
+  const [actualRecipientName, setActualRecipientName] = useState<string>('');
+  const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Submit State
+  const [submittingTtd, setSubmittingTtd] = useState<boolean>(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [ttdSuccessMessage, setTtdSuccessMessage] = useState<string | null>(null);
+
+  const fetchDeliveryDetail = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/driver/deliveries/${deliveryId}`);
+      const data = await res.json();
+
+      if (data.success && data.delivery) {
+        setDelivery(data.delivery);
+        if (data.delivery.recipientName) {
+          setActualRecipientName(data.delivery.recipientName);
         }
-      } catch {
-        setError('Terjadi kesalahan koneksi.');
-      } finally {
-        setLoading(false);
+      } else {
+        setError(data.error || 'Gagal memuat detail pengiriman.');
       }
+    } catch {
+      setError('Terjadi kesalahan koneksi saat memuat detail pengiriman.');
+    } finally {
+      setLoading(false);
     }
-    fetchDetail();
+  };
+
+  useEffect(() => {
+    fetchDeliveryDetail();
   }, [deliveryId]);
 
-  return (
-    <div className="space-y-5">
-      {/* Header Bar */}
-      <div className="flex items-center gap-3">
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setModalError('Ukuran foto terlalu besar. Maksimum ukuran file adalah 5 MB.');
+      return;
+    }
+
+    const validMimes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validMimes.includes(file.type.toLowerCase())) {
+      setModalError('Format file tidak didukung. Pilih foto gambar JPEG, PNG, atau WEBP.');
+      return;
+    }
+
+    setModalError(null);
+    setSelectedPhotoFile(file);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setPhotoPreviewUrl(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleOpenTtdModal = () => {
+    setModalError(null);
+    setTtdSuccessMessage(null);
+    if (delivery?.recipientName) {
+      setActualRecipientName(delivery.recipientName);
+    }
+    setSelectedPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setIsTtdModalOpen(true);
+  };
+
+  const handleProcessTtdSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!delivery) return;
+
+    const recipientClean = actualRecipientName.trim();
+    if (!recipientClean) {
+      setModalError('Nama Penerima Aktual wajib diisi.');
+      return;
+    }
+    if (!selectedPhotoFile) {
+      setModalError('Foto Bukti Tanda Terima wajib diambil.');
+      return;
+    }
+
+    setSubmittingTtd(true);
+    setModalError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('actualRecipientName', recipientClean);
+      formData.append('photo', selectedPhotoFile);
+
+      // Add GPS geolocation if available
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            formData.append('latitude', position.coords.latitude.toString());
+            formData.append('longitude', position.coords.longitude.toString());
+            await submitTtdFormData(formData);
+          },
+          async () => {
+            await submitTtdFormData(formData);
+          },
+          { timeout: 5000 }
+        );
+      } else {
+        await submitTtdFormData(formData);
+      }
+    } catch {
+      setModalError('Terjadi kesalahan koneksi saat memproses tanda terima.');
+      setSubmittingTtd(false);
+    }
+  };
+
+  const submitTtdFormData = async (formData: FormData) => {
+    try {
+      const res = await fetch(`/api/driver/deliveries/${deliveryId}/ttd`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setTtdSuccessMessage(data.message || 'Tanda Terima Berhasil Diproses!');
+        setIsTtdModalOpen(false);
+        fetchDeliveryDetail();
+      } else {
+        if (data.r2Unconfigured) {
+          setModalError(`DELIVERY PROOF R2 CONFIGURATION REQUIRED: ${data.error}`);
+        } else {
+          setModalError(data.error || 'Gagal memproses tanda terima.');
+        }
+      }
+    } catch {
+      setModalError('Terjadi kesalahan koneksi.');
+    } finally {
+      setSubmittingTtd(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
+        <span className="text-xs text-slate-400 font-mono">Memuat detail pengiriman...</span>
+      </div>
+    );
+  }
+
+  if (error || !delivery) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 p-4 space-y-4">
         <Link
           href="/driver/delivery"
-          className="p-2 bg-slate-900 border border-slate-800 text-slate-300 hover:text-white rounded-xl"
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-900 px-3 py-2 rounded-xl border border-slate-800"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-4 h-4" />
+          <span>Kembali ke Daftar Tugas</span>
         </Link>
-        <div>
-          <h1 className="text-base font-bold text-white">Detail Pengiriman</h1>
-          <p className="text-[11px] text-slate-400 font-mono">ID: {deliveryId}</p>
+
+        <div className="p-6 bg-red-950/60 border border-red-800/60 rounded-2xl text-center space-y-3">
+          <AlertCircle className="w-10 h-10 mx-auto text-red-400" />
+          <h2 className="text-sm font-bold text-red-200">Gagal Memuat Pengiriman</h2>
+          <p className="text-xs text-red-300">{error || 'Data tidak ditemukan.'}</p>
         </div>
       </div>
+    );
+  }
 
-      {error && (
-        <div className="p-4 bg-red-950/60 border border-red-800/60 rounded-xl text-red-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-          <span>{error}</span>
+  const waUrl = formatWhatsAppUrl(delivery.recipientPhone, delivery.resiNumber);
+  const safeLocUrl = sanitizeLocationUrl(delivery.shareLocationUrl);
+  const isEligibleForTtd = delivery.status === 'ASSIGNED' || delivery.status === 'IN_DELIVERY';
+
+  return (
+    <div className="space-y-4 pb-20">
+      {/* Top Header Controls */}
+      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <button
+          onClick={() => router.push('/driver/delivery')}
+          className="flex items-center gap-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-900 px-3 py-2 rounded-xl border border-slate-800 transition"
+        >
+          <ArrowLeft className="w-4 h-4 text-emerald-400" />
+          <span>Daftar Tugas</span>
+        </button>
+
+        <span
+          className={`px-3 py-1 rounded-full text-[11px] font-bold border ${
+            delivery.status === 'SUCCESS'
+              ? 'bg-emerald-950 text-emerald-400 border-emerald-800/60'
+              : delivery.status === 'ASSIGNED' || delivery.status === 'IN_DELIVERY'
+              ? 'bg-sky-950 text-sky-400 border-sky-800/60'
+              : 'bg-slate-800 text-slate-300 border-slate-700'
+          }`}
+        >
+          {delivery.status === 'SUCCESS'
+            ? 'SUDAH TTD (SUCCESS)'
+            : delivery.status === 'ASSIGNED'
+            ? 'SIAP DIANTAR'
+            : delivery.status}
+        </span>
+      </div>
+
+      {/* Resi Info Card */}
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-2 shadow-xl">
+        <div className="flex items-center gap-2">
+          <Package className="w-5 h-5 text-emerald-400" />
+          <span className="text-xs text-slate-400 font-bold block uppercase tracking-wider">
+            NOMOR RESI
+          </span>
+        </div>
+        <h1 className="text-xl font-black text-white font-mono tracking-wider">
+          {delivery.resiNumber}
+        </h1>
+      </div>
+
+      {/* Success Notification Banner */}
+      {ttdSuccessMessage && (
+        <div className="p-4 bg-emerald-950/80 border border-emerald-800/80 rounded-2xl text-emerald-200 text-xs flex items-center gap-3">
+          <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
+          <div>
+            <span className="font-bold block text-sm">Tanda Terima Berhasil!</span>
+            <span>{ttdSuccessMessage}</span>
+          </div>
         </div>
       )}
 
-      {loading ? (
-        <div className="p-12 flex flex-col items-center justify-center text-slate-400 text-xs space-y-3">
-          <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
-          <span>Memuat detail pengiriman...</span>
+      {/* SECTION 1: DATA PENERIMA & QUICK ACTIONS */}
+      <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-4 shadow-xl">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">
+          DATA PENERIMA
+        </h2>
+
+        <div className="space-y-1">
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">Nama Tujuan</span>
+          <span className="text-base font-bold text-white block">{delivery.recipientName}</span>
         </div>
-      ) : !detail ? (
-        <div className="p-12 text-center text-slate-500 text-xs">Data tidak ditemukan.</div>
-      ) : (
-        <div className="space-y-4">
-          {/* Card 1: Resi & Status */}
-          <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-2 shadow-xl">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400 font-bold">Nomor Resi:</span>
-              <span className="font-mono font-black text-sky-400 text-base">{detail.resiNumber}</span>
+
+        <div className="space-y-1">
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">Telepon</span>
+          <div className="flex items-center gap-2 text-sm font-mono text-slate-200">
+            <Phone className="w-4 h-4 text-emerald-400" />
+            <span>{delivery.recipientPhone || '-'}</span>
+          </div>
+        </div>
+
+        {/* Quick Action Row (Min 44px Touch Target) */}
+        <div className="grid grid-cols-2 gap-2.5 pt-1">
+          {waUrl ? (
+            <a
+              href={waUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-11 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition shadow-md"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>WhatsApp</span>
+            </a>
+          ) : (
+            <button
+              disabled
+              className="h-11 bg-slate-950 text-slate-600 border border-slate-800 rounded-xl text-xs font-bold flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>WhatsApp (Tidak Ada)</span>
+            </button>
+          )}
+
+          {safeLocUrl ? (
+            <a
+              href={safeLocUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-11 bg-sky-950/80 hover:bg-sky-900 text-sky-400 border border-sky-800/60 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition shadow-md"
+            >
+              <MapPin className="w-4 h-4" />
+              <span>Buka Lokasi</span>
+              <ExternalLink className="w-3 h-3 ml-0.5" />
+            </a>
+          ) : (
+            <button
+              disabled
+              className="h-11 bg-slate-950 text-slate-600 border border-slate-800 rounded-xl text-xs font-bold flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
+            >
+              <MapPin className="w-4 h-4" />
+              <span>Lokasi (Tidak Ada)</span>
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-1 pt-2 border-t border-slate-800">
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">
+            Alamat & Area Pengiriman
+          </span>
+          <p className="text-xs text-slate-200 leading-relaxed font-semibold">
+            {delivery.recipientAddress}
+          </p>
+          <span className="text-[11px] font-mono font-bold text-sky-400 block pt-0.5">
+            Area: {delivery.recipientArea}
+          </span>
+        </div>
+      </div>
+
+      {/* SECTION 2: DATA BARANG */}
+      <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-3 shadow-xl">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">
+          DETAIL BARANG
+        </h2>
+
+        <div className="grid grid-cols-3 gap-2 font-mono text-xs">
+          <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 col-span-3">
+            <span className="text-[10px] text-slate-500 font-sans block font-semibold">Nama Barang</span>
+            <span className="font-bold text-white">{delivery.itemName}</span>
+          </div>
+
+          <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-center">
+            <span className="text-[10px] text-slate-500 font-sans block font-semibold">Berat</span>
+            <span className="font-bold text-emerald-400">{delivery.weightKg} Kg</span>
+          </div>
+
+          <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-center">
+            <span className="text-[10px] text-slate-500 font-sans block font-semibold">Jumlah</span>
+            <span className="font-bold text-sky-400">{delivery.koliCount} Koli</span>
+          </div>
+
+          <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-center">
+            <span className="text-[10px] text-slate-500 font-sans block font-semibold">Catatan</span>
+            <span className="text-[11px] text-slate-300">{delivery.notes || '-'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* PROOF RECORD CARD (If SUCCESS) */}
+      {delivery.status === 'SUCCESS' && delivery.proof && (
+        <div className="p-5 bg-gradient-to-br from-emerald-950/60 via-slate-900 to-slate-950 border border-emerald-800/60 rounded-2xl space-y-3 shadow-xl">
+          <div className="flex items-center gap-2 border-b border-emerald-800/40 pb-2">
+            <UserCheck className="w-5 h-5 text-emerald-400" />
+            <h3 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+              INFORMASI TANDA TERIMA (SUDAH TTD)
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-xs font-mono text-slate-200">
+            <div>
+              <span className="text-[10px] text-slate-400 font-sans block">Nama Penerima Aktual:</span>
+              <span className="font-bold text-white text-sm">{delivery.proof.actualRecipientName}</span>
             </div>
-            <div className="flex items-center justify-between border-t border-slate-800 pt-2">
-              <span className="text-xs text-slate-400 font-bold">Status:</span>
-              <span
-                className={`px-3 py-1 rounded-full text-xs font-bold ${
-                  detail.status === 'SUCCESS'
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
-                    : 'bg-amber-950 text-amber-300 border border-amber-800/60'
-                }`}
-              >
-                {detail.status === 'SUCCESS' ? 'SUDAH TTD (SELESAI)' : detail.status}
+            <div>
+              <span className="text-[10px] text-slate-400 font-sans block">Waktu Serah Terima:</span>
+              <span className="font-bold text-emerald-400">
+                {new Date(delivery.proof.receivedAt).toLocaleString('id-ID', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}{' '}
+                WIB
               </span>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Card 2: Recipient Details */}
-          <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-3 shadow-xl">
-            <h3 className="text-xs font-bold text-sky-400 uppercase tracking-wider">Data Penerima</h3>
-
-            <div className="space-y-2 text-xs">
-              <div>
-                <span className="text-slate-400 block text-[10px]">Nama Penerima:</span>
-                <span className="font-bold text-white text-sm">{detail.recipientName}</span>
-              </div>
-
-              <div>
-                <span className="text-slate-400 block text-[10px]">Nomor Telepon:</span>
-                <a
-                  href={`tel:${detail.recipientPhone}`}
-                  className="font-mono text-sky-400 font-bold flex items-center gap-1.5 hover:underline"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>{detail.recipientPhone}</span>
-                </a>
-              </div>
-
-              <div>
-                <span className="text-slate-400 block text-[10px]">Alamat & Area:</span>
-                <div className="text-slate-200 flex items-start gap-1.5 mt-0.5 leading-relaxed">
-                  <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                  <span>
-                    {detail.recipientAddress} ({detail.recipientArea})
-                  </span>
-                </div>
-              </div>
-
-              {detail.shareLocationUrl && (
-                <div className="pt-2">
-                  <a
-                    href={detail.shareLocationUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
-                  >
-                    <Navigation className="w-4 h-4" />
-                    <span>Petunjuk Lokasi (Google Maps)</span>
-                  </a>
-                </div>
-              )}
+      {/* BOTTOM ACTION BUTTON */}
+      <div className="pt-3">
+        {isEligibleForTtd ? (
+          <button
+            type="button"
+            onClick={handleOpenTtdModal}
+            className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm rounded-2xl shadow-xl shadow-emerald-600/30 transition flex items-center justify-center gap-2"
+          >
+            <CheckCircle2 className="w-5 h-5" />
+            <span>✓ PROSES TANDA TERIMA</span>
+          </button>
+        ) : (
+          <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl text-center font-bold text-xs text-slate-400 space-y-1">
+            <div className="flex items-center justify-center gap-2 text-emerald-400 font-black text-sm">
+              <CheckCircle2 className="w-5 h-5" />
+              <span>✓ TANDA TERIMA SELESAI</span>
             </div>
+            {delivery.proof && (
+              <p className="text-[11px] font-mono text-slate-300">
+                Diterima oleh: {delivery.proof.actualRecipientName}
+              </p>
+            )}
           </div>
+        )}
+      </div>
 
-          {/* Card 3: Cargo Details */}
-          <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl space-y-3 shadow-xl">
-            <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Package className="w-4 h-4" />
-              <span>Detail Barang & Muatan</span>
-            </h3>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Nama Barang</span>
-                <span className="font-bold text-white">{detail.itemName}</span>
-              </div>
-              <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Berat Total</span>
-                <span className="font-bold text-sky-400 font-mono">{detail.weightKg} kg</span>
-              </div>
-              <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Jumlah Koli</span>
-                <span className="font-bold text-sky-400 font-mono">{detail.koliCount} koli</span>
-              </div>
-              <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Catatan Resi</span>
-                <span className="font-medium text-slate-300">{detail.notes || '-'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 4: Delivery Proof if exists */}
-          {detail.proof && (
-            <div className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-2xl space-y-2 text-xs">
-              <h3 className="font-bold text-emerald-400 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Bukti Pengiriman (TTD)</span>
+      {/* MOBILE SHEET / MODAL: PROSES TANDA TERIMA */}
+      {isTtdModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <span>PROSES TANDA TERIMA</span>
               </h3>
-              <div className="text-slate-300 font-mono text-[11px] space-y-1">
-                <div>Penerima: <strong className="text-white">{detail.proof.actualRecipientName}</strong></div>
-                <div>Waktu: {detail.proof.receivedAt}</div>
+              <button
+                type="button"
+                onClick={() => setIsTtdModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Info Summary Header */}
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 font-mono text-xs text-slate-300">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Resi:</span>
+                <span className="font-bold text-emerald-400">{delivery.resiNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Tujuan:</span>
+                <span className="font-bold text-white">{delivery.recipientName}</span>
               </div>
             </div>
-          )}
+
+            {/* Modal Error Alert */}
+            {modalError && (
+              <div className="p-3 bg-red-950/80 border border-red-800/80 rounded-xl text-red-200 text-xs flex items-start gap-2">
+                <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span>{modalError}</span>
+              </div>
+            )}
+
+            {/* TTD Form */}
+            <form onSubmit={handleProcessTtdSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">
+                  Nama Penerima Aktual *
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={100}
+                  value={actualRecipientName}
+                  onChange={(e) => setActualRecipientName(e.target.value)}
+                  placeholder="Contoh: BUDI / SECURITY / IBU ANI"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold text-sm"
+                />
+              </div>
+
+              {/* Photo Bukti Input */}
+              <div className="space-y-2">
+                <label className="block text-slate-300 font-bold">
+                  Foto Bukti Tanda Terima * (Maks 5 MB)
+                </label>
+
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  capture="environment"
+                  ref={fileInputRef}
+                  onChange={handlePhotoSelect}
+                  className="hidden"
+                />
+
+                {photoPreviewUrl ? (
+                  <div className="space-y-2 text-center">
+                    <div className="relative w-full h-48 mx-auto border-2 border-emerald-500/80 rounded-xl overflow-hidden shadow-lg bg-black">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photoPreviewUrl}
+                        alt="Preview Bukti TTD"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div className="flex justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-xl text-xs"
+                      >
+                        Ambil Ulang
+                      </button>
+                      <span className="px-3 py-1.5 bg-emerald-950 text-emerald-400 font-bold rounded-xl text-xs border border-emerald-800/60">
+                        Foto Siap
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full p-6 border-2 border-dashed border-slate-700 hover:border-emerald-500/60 rounded-xl bg-slate-950/60 flex flex-col items-center justify-center space-y-2 transition group"
+                  >
+                    <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl group-hover:scale-110 transition">
+                      <Camera className="w-6 h-6" />
+                    </div>
+                    <span className="text-xs font-bold text-white">Ambil Foto Bukti Tanda Terima</span>
+                    <span className="text-[10px] text-slate-400">
+                      Gunakan kamera HP atau pilih foto penerima
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTtdModalOpen(false)}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingTtd || !selectedPhotoFile}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-40 flex items-center gap-2"
+                >
+                  {submittingTtd && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>Proses Tanda Terima</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
