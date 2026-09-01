@@ -36,10 +36,10 @@ export default function AdminLayout({
         {/* Desktop Sidebar */}
         <aside className="w-64 border-r border-slate-800 bg-slate-950/40 p-4 hidden md:block shrink-0">
           <nav className="space-y-4 text-sm">
-            {/* Modul Utama */}
+            {/* Operasional */}
             <div className="space-y-1">
               <div className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Modul Utama
+                Operasional
               </div>
               <Link
                 href="/"
@@ -58,6 +58,15 @@ export default function AdminLayout({
                 className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
               >
                 Rincian Manifest
+              </Link>
+              <Link
+                href="/manifest/check"
+                className="block px-3 py-2 rounded-md text-sky-400 hover:text-sky-300 hover:bg-sky-950/30 transition font-medium flex items-center justify-between"
+              >
+                <span>Cek Manifest</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-sky-500/20 border border-sky-500/30 rounded font-mono font-bold">
+                  TRACK
+                </span>
               </Link>
               <Link
                 href="/monitoring/delivery"
