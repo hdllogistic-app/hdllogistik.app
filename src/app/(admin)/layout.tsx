@@ -65,9 +65,37 @@ export default function AdminLayout({
               >
                 Monitoring Delivery
               </Link>
-              <div className="px-3 py-2 rounded-md text-slate-500 cursor-not-allowed">
+            </div>
+
+            {/* Finance & Cashflow */}
+            <div className="space-y-1 border-t border-slate-800/80 pt-3">
+              <div className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 Finance & Cashflow
               </div>
+              <Link
+                href="/finance/operational-settlement"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
+              >
+                Operasional Settlement
+              </Link>
+              <Link
+                href="/finance/cashflow"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
+              >
+                Cashflow
+              </Link>
+              <Link
+                href="/finance/attendance"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
+              >
+                Absensi
+              </Link>
+              <Link
+                href="/finance/salary-closing"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
+              >
+                Salary Closing
+              </Link>
             </div>
 
             {/* Pengaturan */}
