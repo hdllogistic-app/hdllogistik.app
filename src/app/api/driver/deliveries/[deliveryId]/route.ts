@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/dal';
 import { USER_ROLES } from '@/lib/auth/roles';
 import { prisma } from '@/lib/prisma';
+import { PENDING_REASON_MAP } from '@/modules/delivery/services/driver-delivery.service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,9 @@ export async function GET(
           },
         },
         proof: true,
+        events: {
+          orderBy: { timestamp: 'asc' },
+        },
       },
     });
 
@@ -54,6 +58,11 @@ export async function GET(
         { success: false, error: 'Detail delivery tidak ditemukan atau tidak milik Anda.' },
         { status: 404 }
       );
+    }
+
+    let pendingReasonTitle = null;
+    if (delivery.pendingReason) {
+      pendingReasonTitle = PENDING_REASON_MAP[delivery.pendingReason] || delivery.pendingReason;
     }
 
     return NextResponse.json({
@@ -72,6 +81,10 @@ export async function GET(
         koliCount: delivery.manifest.koliCount,
         notes: delivery.manifest.notes,
         status: delivery.status,
+        pendingReason: delivery.pendingReason,
+        pendingReasonTitle,
+        pendingNotes: delivery.pendingNotes,
+        pendingAt: delivery.pendingAt ? delivery.pendingAt.toISOString() : null,
         proof: delivery.proof
           ? {
               actualRecipientName: delivery.proof.actualRecipientName,
@@ -81,6 +94,12 @@ export async function GET(
               notes: delivery.proof.notes,
             }
           : null,
+        events: delivery.events.map((ev) => ({
+          id: ev.id,
+          status: ev.status,
+          notes: ev.notes,
+          timestamp: ev.timestamp.toISOString(),
+        })),
       },
     });
   } catch (error) {

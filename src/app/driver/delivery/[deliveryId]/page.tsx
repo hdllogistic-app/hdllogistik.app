@@ -17,11 +17,21 @@ import {
   UserCheck,
   ExternalLink,
   ShieldAlert,
+  Clock,
+  AlertTriangle,
+  History,
 } from 'lucide-react';
 import {
   formatWhatsAppUrl,
   sanitizeLocationUrl,
 } from '@/modules/delivery/utils/delivery-utils';
+
+interface DeliveryEventItem {
+  id: string;
+  status: string;
+  notes: string | null;
+  timestamp: string;
+}
 
 interface DeliveryDetailDTO {
   id: string;
@@ -37,6 +47,10 @@ interface DeliveryDetailDTO {
   koliCount: number;
   notes: string | null;
   status: string;
+  pendingReason: string | null;
+  pendingReasonTitle: string | null;
+  pendingNotes: string | null;
+  pendingAt: string | null;
   proof: {
     actualRecipientName: string;
     receivedAt: string;
@@ -44,6 +58,7 @@ interface DeliveryDetailDTO {
     signatureUrl: string | null;
     notes: string | null;
   } | null;
+  events?: DeliveryEventItem[];
 }
 
 export default function DriverDeliveryDetailPage({
@@ -65,11 +80,18 @@ export default function DriverDeliveryDetailPage({
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Submit State
   const [submittingTtd, setSubmittingTtd] = useState<boolean>(false);
-  const [modalError, setModalError] = useState<string | null>(null);
-  const [ttdSuccessMessage, setTtdSuccessMessage] = useState<string | null>(null);
+  const [ttdModalError, setTtdModalError] = useState<string | null>(null);
+
+  // Pending Modal State
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState<boolean>(false);
+  const [pendingReasonCode, setPendingReasonCode] = useState<string>('RESCHEDULE');
+  const [customReasonText, setCustomReasonText] = useState<string>('');
+  const [submittingPending, setSubmittingPending] = useState<boolean>(false);
+  const [pendingModalError, setPendingModalError] = useState<string | null>(null);
+
+  // General Notification State
+  const [successBannerMessage, setSuccessBannerMessage] = useState<string | null>(null);
 
   const fetchDeliveryDetail = async () => {
     setLoading(true);
@@ -97,22 +119,23 @@ export default function DriverDeliveryDetailPage({
     fetchDeliveryDetail();
   }, [deliveryId]);
 
+  // Handle Photo Select for TTD
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      setModalError('Ukuran foto terlalu besar. Maksimum ukuran file adalah 5 MB.');
+      setTtdModalError('Ukuran foto terlalu besar. Maksimum ukuran file adalah 5 MB.');
       return;
     }
 
     const validMimes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validMimes.includes(file.type.toLowerCase())) {
-      setModalError('Format file tidak didukung. Pilih foto gambar JPEG, PNG, atau WEBP.');
+      setTtdModalError('Format file tidak didukung. Pilih foto gambar JPEG, PNG, atau WEBP.');
       return;
     }
 
-    setModalError(null);
+    setTtdModalError(null);
     setSelectedPhotoFile(file);
 
     const reader = new FileReader();
@@ -123,8 +146,8 @@ export default function DriverDeliveryDetailPage({
   };
 
   const handleOpenTtdModal = () => {
-    setModalError(null);
-    setTtdSuccessMessage(null);
+    setTtdModalError(null);
+    setSuccessBannerMessage(null);
     if (delivery?.recipientName) {
       setActualRecipientName(delivery.recipientName);
     }
@@ -133,29 +156,36 @@ export default function DriverDeliveryDetailPage({
     setIsTtdModalOpen(true);
   };
 
+  const handleOpenPendingModal = () => {
+    setPendingModalError(null);
+    setSuccessBannerMessage(null);
+    setPendingReasonCode('RESCHEDULE');
+    setCustomReasonText('');
+    setIsPendingModalOpen(true);
+  };
+
   const handleProcessTtdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!delivery) return;
 
     const recipientClean = actualRecipientName.trim();
     if (!recipientClean) {
-      setModalError('Nama Penerima Aktual wajib diisi.');
+      setTtdModalError('Nama Penerima Aktual wajib diisi.');
       return;
     }
     if (!selectedPhotoFile) {
-      setModalError('Foto Bukti Tanda Terima wajib diambil.');
+      setTtdModalError('Foto Bukti Tanda Terima wajib diambil.');
       return;
     }
 
     setSubmittingTtd(true);
-    setModalError(null);
+    setTtdModalError(null);
 
     try {
       const formData = new FormData();
       formData.append('actualRecipientName', recipientClean);
       formData.append('photo', selectedPhotoFile);
 
-      // Add GPS geolocation if available
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
@@ -172,7 +202,7 @@ export default function DriverDeliveryDetailPage({
         await submitTtdFormData(formData);
       }
     } catch {
-      setModalError('Terjadi kesalahan koneksi saat memproses tanda terima.');
+      setTtdModalError('Terjadi kesalahan koneksi saat memproses tanda terima.');
       setSubmittingTtd(false);
     }
   };
@@ -186,20 +216,57 @@ export default function DriverDeliveryDetailPage({
 
       const data = await res.json();
       if (data.success) {
-        setTtdSuccessMessage(data.message || 'Tanda Terima Berhasil Diproses!');
+        setSuccessBannerMessage(data.message || 'Tanda Terima Berhasil Diproses!');
         setIsTtdModalOpen(false);
         fetchDeliveryDetail();
       } else {
         if (data.r2Unconfigured) {
-          setModalError(`DELIVERY PROOF R2 CONFIGURATION REQUIRED: ${data.error}`);
+          setTtdModalError(`DELIVERY PROOF R2 CONFIGURATION REQUIRED: ${data.error}`);
         } else {
-          setModalError(data.error || 'Gagal memproses tanda terima.');
+          setTtdModalError(data.error || 'Gagal memproses tanda terima.');
         }
       }
     } catch {
-      setModalError('Terjadi kesalahan koneksi.');
+      setTtdModalError('Terjadi kesalahan koneksi.');
     } finally {
       setSubmittingTtd(false);
+    }
+  };
+
+  const handleProcessPendingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!delivery) return;
+
+    if (pendingReasonCode === 'OTHER' && !customReasonText.trim()) {
+      setPendingModalError('Alasan Lainnya wajib diisi.');
+      return;
+    }
+
+    setSubmittingPending(true);
+    setPendingModalError(null);
+
+    try {
+      const res = await fetch(`/api/driver/deliveries/${deliveryId}/pending`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reasonCode: pendingReasonCode,
+          customReasonText: customReasonText.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setSuccessBannerMessage(data.message || 'Delivery Pending Berhasil Dicatat!');
+        setIsPendingModalOpen(false);
+        fetchDeliveryDetail();
+      } else {
+        setPendingModalError(data.error || 'Gagal memproses delivery pending.');
+      }
+    } catch {
+      setPendingModalError('Terjadi kesalahan koneksi.');
+    } finally {
+      setSubmittingPending(false);
     }
   };
 
@@ -234,7 +301,7 @@ export default function DriverDeliveryDetailPage({
 
   const waUrl = formatWhatsAppUrl(delivery.recipientPhone, delivery.resiNumber);
   const safeLocUrl = sanitizeLocationUrl(delivery.shareLocationUrl);
-  const isEligibleForTtd = delivery.status === 'ASSIGNED' || delivery.status === 'IN_DELIVERY';
+  const isEligibleForActions = delivery.status !== 'SUCCESS' && delivery.status !== 'CANCELLED';
 
   return (
     <div className="space-y-4 pb-20">
@@ -252,16 +319,16 @@ export default function DriverDeliveryDetailPage({
           className={`px-3 py-1 rounded-full text-[11px] font-bold border ${
             delivery.status === 'SUCCESS'
               ? 'bg-emerald-950 text-emerald-400 border-emerald-800/60'
-              : delivery.status === 'ASSIGNED' || delivery.status === 'IN_DELIVERY'
-              ? 'bg-sky-950 text-sky-400 border-sky-800/60'
-              : 'bg-slate-800 text-slate-300 border-slate-700'
+              : delivery.status === 'PENDING'
+              ? 'bg-amber-950 text-amber-300 border-amber-800/60'
+              : 'bg-sky-950 text-sky-400 border-sky-800/60'
           }`}
         >
           {delivery.status === 'SUCCESS'
             ? 'SUDAH TTD (SUCCESS)'
-            : delivery.status === 'ASSIGNED'
-            ? 'SIAP DIANTAR'
-            : delivery.status}
+            : delivery.status === 'PENDING'
+            ? 'PENDING'
+            : 'SIAP DIANTAR'}
         </span>
       </div>
 
@@ -279,12 +346,37 @@ export default function DriverDeliveryDetailPage({
       </div>
 
       {/* Success Notification Banner */}
-      {ttdSuccessMessage && (
+      {successBannerMessage && (
         <div className="p-4 bg-emerald-950/80 border border-emerald-800/80 rounded-2xl text-emerald-200 text-xs flex items-center gap-3">
           <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
           <div>
-            <span className="font-bold block text-sm">Tanda Terima Berhasil!</span>
-            <span>{ttdSuccessMessage}</span>
+            <span className="font-bold block text-sm">Berhasil!</span>
+            <span>{successBannerMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* PENDING SUMMARY CARD (If Status PENDING) */}
+      {delivery.status === 'PENDING' && delivery.pendingReasonTitle && (
+        <div className="p-4 bg-amber-950/50 border border-amber-800/70 rounded-2xl space-y-2 shadow-xl">
+          <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+            <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>STATUS CURRENT: PENDING</span>
+          </div>
+          <div className="text-xs space-y-1 font-mono text-amber-200">
+            <div>
+              Alasan: <strong className="text-white">{delivery.pendingReasonTitle}</strong>
+            </div>
+            {delivery.pendingNotes && (
+              <div>
+                Catatan: <span className="text-slate-300">{delivery.pendingNotes}</span>
+              </div>
+            )}
+            {delivery.pendingAt && (
+              <div className="text-[10px] text-amber-400/80">
+                Dicatat: {new Date(delivery.pendingAt).toLocaleString('id-ID')} WIB
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -308,7 +400,7 @@ export default function DriverDeliveryDetailPage({
           </div>
         </div>
 
-        {/* Quick Action Row (Min 44px Touch Target) */}
+        {/* Quick Action Row */}
         <div className="grid grid-cols-2 gap-2.5 pt-1">
           {waUrl ? (
             <a
@@ -426,17 +518,74 @@ export default function DriverDeliveryDetailPage({
         </div>
       )}
 
-      {/* BOTTOM ACTION BUTTON */}
-      <div className="pt-3">
-        {isEligibleForTtd ? (
-          <button
-            type="button"
-            onClick={handleOpenTtdModal}
-            className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm rounded-2xl shadow-xl shadow-emerald-600/30 transition flex items-center justify-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            <span>✓ PROSES TANDA TERIMA</span>
-          </button>
+      {/* SECTION 3: RIWAYAT DELIVERY */}
+      {delivery.events && delivery.events.length > 0 && (
+        <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-3 shadow-xl">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+            <History className="w-4 h-4 text-sky-400" />
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              RIWAYAT DELIVERY
+            </h3>
+          </div>
+
+          <div className="space-y-2 text-xs font-mono">
+            {delivery.events.map((ev) => (
+              <div
+                key={ev.id}
+                className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-start gap-2.5"
+              >
+                <div
+                  className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                    ev.status === 'SUCCESS'
+                      ? 'bg-emerald-400'
+                      : ev.status === 'PENDING'
+                      ? 'bg-amber-400'
+                      : 'bg-sky-400'
+                  }`}
+                />
+                <div className="space-y-0.5 flex-1">
+                  <div className="flex justify-between items-center text-[11px]">
+                    <span className="font-bold text-white">{ev.status}</span>
+                    <span className="text-slate-500">
+                      {new Date(ev.timestamp).toLocaleString('id-ID', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}{' '}
+                      WIB
+                    </span>
+                  </div>
+                  {ev.notes && <p className="text-[11px] text-slate-400 leading-normal">{ev.notes}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* BOTTOM ACTION BUTTONS */}
+      <div className="pt-2">
+        {isEligibleForActions ? (
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={handleOpenTtdModal}
+              className="py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl shadow-emerald-600/30 transition flex items-center justify-center gap-1.5"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>✓ TANDA TERIMA</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenPendingModal}
+              className="py-4 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl shadow-amber-600/30 transition flex items-center justify-center gap-1.5"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              <span>! PENDING</span>
+            </button>
+          </div>
         ) : (
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl text-center font-bold text-xs text-slate-400 space-y-1">
             <div className="flex items-center justify-center gap-2 text-emerald-400 font-black text-sm">
@@ -452,7 +601,7 @@ export default function DriverDeliveryDetailPage({
         )}
       </div>
 
-      {/* MOBILE SHEET / MODAL: PROSES TANDA TERIMA */}
+      {/* MOBILE SHEET / MODAL 1: PROSES TANDA TERIMA */}
       {isTtdModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
@@ -470,7 +619,6 @@ export default function DriverDeliveryDetailPage({
               </button>
             </div>
 
-            {/* Info Summary Header */}
             <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 font-mono text-xs text-slate-300">
               <div className="flex justify-between">
                 <span className="text-slate-500">Resi:</span>
@@ -482,15 +630,13 @@ export default function DriverDeliveryDetailPage({
               </div>
             </div>
 
-            {/* Modal Error Alert */}
-            {modalError && (
+            {ttdModalError && (
               <div className="p-3 bg-red-950/80 border border-red-800/80 rounded-xl text-red-200 text-xs flex items-start gap-2">
                 <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <span>{modalError}</span>
+                <span>{ttdModalError}</span>
               </div>
             )}
 
-            {/* TTD Form */}
             <form onSubmit={handleProcessTtdSubmit} className="space-y-4 text-xs">
               <div>
                 <label className="block text-slate-300 font-bold mb-1">
@@ -507,7 +653,6 @@ export default function DriverDeliveryDetailPage({
                 />
               </div>
 
-              {/* Photo Bukti Input */}
               <div className="space-y-2">
                 <label className="block text-slate-300 font-bold">
                   Foto Bukti Tanda Terima * (Maks 5 MB)
@@ -577,6 +722,99 @@ export default function DriverDeliveryDetailPage({
                 >
                   {submittingTtd && <Loader2 className="w-4 h-4 animate-spin" />}
                   <span>Proses Tanda Terima</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MOBILE SHEET / MODAL 2: DELIVERY PENDING */}
+      {isPendingModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <span>DELIVERY PENDING</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsPendingModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 font-mono text-xs text-slate-300">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Resi:</span>
+                <span className="font-bold text-amber-400">{delivery.resiNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Tujuan:</span>
+                <span className="font-bold text-white">{delivery.recipientName}</span>
+              </div>
+            </div>
+
+            {pendingModalError && (
+              <div className="p-3 bg-red-950/80 border border-red-800/80 rounded-xl text-red-200 text-xs flex items-start gap-2">
+                <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span>{pendingModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleProcessPendingSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1.5">
+                  Alasan Pending *
+                </label>
+                <select
+                  value={pendingReasonCode}
+                  onChange={(e) => setPendingReasonCode(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold text-xs"
+                >
+                  <option value="RESCHEDULE">Reschedule</option>
+                  <option value="RECIPIENT_UNREACHABLE">Penerima Tidak Bisa Dihubungi</option>
+                  <option value="RECIPIENT_REQUEST_RETURN">Penerima Meminta Retur</option>
+                  <option value="RECIPIENT_REJECTED">Penerima Menolak</option>
+                  <option value="OTHER">Lainnya</option>
+                </select>
+              </div>
+
+              {pendingReasonCode === 'OTHER' && (
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1.5">
+                    Alasan Lainnya * (Maks 250 karakter)
+                  </label>
+                  <textarea
+                    required
+                    maxLength={250}
+                    rows={3}
+                    value={customReasonText}
+                    onChange={(e) => setCustomReasonText(e.target.value)}
+                    placeholder="Tuliskan alasan delivery pending..."
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPendingModalOpen(false)}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingPending}
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl shadow-lg shadow-amber-600/20 disabled:opacity-40 flex items-center gap-2"
+                >
+                  {submittingPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>Simpan Pending</span>
                 </button>
               </div>
             </form>

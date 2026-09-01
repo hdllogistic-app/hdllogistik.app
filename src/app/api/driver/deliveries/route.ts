@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/dal';
 import { USER_ROLES } from '@/lib/auth/roles';
-import { prisma } from '@/lib/prisma';
-import { getJakartaDateInfo } from '@/modules/manifest/utils/resi-generator';
+import { getDriverDeliveriesService } from '@/modules/delivery/services/driver-delivery.service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,73 +20,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { businessDate } = getJakartaDateInfo();
+    const { searchParams } = new URL(request.url);
+    const dateParam = searchParams.get('date') || undefined;
+    const filterParam = (searchParams.get('filter') || 'all').toLowerCase() as 'all' | 'success' | 'pending';
 
-    // 3. Query active delivery assignments for this Driver
-    const assignments = await prisma.deliveryAssignment.findMany({
-      where: {
-        driverId: driverEmployeeId,
-      },
-      include: {
-        delivery: {
-          include: {
-            manifest: {
-              select: {
-                resiNumber: true,
-                recipientName: true,
-                recipientPhone: true,
-                recipientProvinceArea: true,
-                recipientAddress: true,
-                shareLocationUrl: true,
-                weightKg: true,
-                koliCount: true,
-                itemName: true,
-              },
-            },
-            proof: true,
-          },
-        },
-      },
-      orderBy: { assignedAt: 'desc' },
-    });
+    const result = await getDriverDeliveriesService(
+      driverEmployeeId,
+      dateParam,
+      filterParam
+    );
 
-    let totalDeliveries = assignments.length;
-    let successCount = 0;
-    let pendingCount = 0;
-
-    const items = assignments.map((a) => {
-      const status = a.delivery.status;
-      if (status === 'SUCCESS') successCount++;
-      else if (status !== 'CANCELLED') pendingCount++;
-
-      return {
-        deliveryId: a.delivery.id,
-        manifestId: a.delivery.manifestId,
-        resiNumber: a.delivery.manifest.resiNumber,
-        recipientName: a.delivery.manifest.recipientName,
-        recipientPhone: a.delivery.manifest.recipientPhone,
-        recipientArea: a.delivery.manifest.recipientProvinceArea,
-        recipientAddress: a.delivery.manifest.recipientAddress,
-        shareLocationUrl: a.delivery.manifest.shareLocationUrl || null,
-        itemName: a.delivery.manifest.itemName,
-        weightKg: a.delivery.manifest.weightKg.toNumber(),
-        koliCount: a.delivery.manifest.koliCount,
-        status,
-        assignedAt: a.assignedAt.toISOString(),
-        hasProof: !!a.delivery.proof,
-      };
-    });
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
 
     return NextResponse.json({
       success: true,
       driverName: currentUser.employeeName,
-      date: businessDate.toISOString().split('T')[0],
-      summary: {
-        totalDeliveries,
-        successCount,
-        pendingCount,
-      },
-      deliveries: items,
+      selectedDate: result.selectedDate,
+      summary: result.summary,
+      deliveries: result.deliveries,
     });
   } catch (error) {
     console.error('GET /api/driver/deliveries Error:', error);
