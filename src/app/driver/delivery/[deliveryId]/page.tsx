@@ -797,7 +797,7 @@ export default function DriverDeliveryDetailPage({
                   value={actualRecipientName}
                   onChange={(e) => setActualRecipientName(e.target.value)}
                   placeholder="Contoh: BUDI / SECURITY / IBU ANI"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold text-sm"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold text-base"
                 />
               </div>
 
@@ -859,14 +859,14 @@ export default function DriverDeliveryDetailPage({
                 <button
                   type="button"
                   onClick={() => setIsTtdModalOpen(false)}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={submittingTtd || !selectedPhotoFile}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-40 flex items-center gap-2"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-40 flex items-center gap-2 text-xs"
                 >
                   {submittingTtd && <Loader2 className="w-4 h-4 animate-spin" />}
                   <span>Proses Tanda Terima</span>
@@ -921,7 +921,7 @@ export default function DriverDeliveryDetailPage({
                 <select
                   value={pendingReasonCode}
                   onChange={(e) => setPendingReasonCode(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold text-xs"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold text-base"
                 >
                   <option value="RESCHEDULE">Reschedule</option>
                   <option value="RECIPIENT_UNREACHABLE">Penerima Tidak Bisa Dihubungi</option>
@@ -943,7 +943,7 @@ export default function DriverDeliveryDetailPage({
                     value={customReasonText}
                     onChange={(e) => setCustomReasonText(e.target.value)}
                     placeholder="Tuliskan alasan delivery pending..."
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-base"
                   />
                 </div>
               )}

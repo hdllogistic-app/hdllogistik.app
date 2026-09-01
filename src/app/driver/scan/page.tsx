@@ -82,56 +82,71 @@ export default function DriverScanPage() {
   const [isManualOpen, setIsManualOpen] = useState<boolean>(false);
   const [manualResiInput, setManualResiInput] = useState<string>('');
 
-  // 1. Start Camera Stream with Ideal HD Resolution & Facing Environment
-  useEffect(() => {
-    async function startCamera() {
-      setCameraError(null);
-      try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          setCameraError('Kamera tidak didukung oleh browser Anda.');
-          return;
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-        });
-
-        mediaStreamRef.current = stream;
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-          setCameraActive(true);
-        }
-
-        // Check Torch Support
-        const track = stream.getVideoTracks()[0];
-        if (track) {
-          // @ts-ignore
-          const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-          // @ts-ignore
-          if (capabilities.torch) {
-            setTorchSupported(true);
-          }
-        }
-      } catch (err: any) {
-        console.error('Camera Access Error:', err);
-        setCameraError(
-          'Kamera dibutuhkan untuk scan barcode. Aktifkan izin kamera pada browser lalu coba kembali.'
-        );
-      }
+  // Hard Stop Camera Streams & Detach Video Elements
+  const stopCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (e) {}
+      });
+      mediaStreamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+    setTorchOn(false);
+  };
 
-    startCamera();
+  const startCameraSession = async () => {
+    stopCamera();
+    setCameraError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError('Kamera tidak didukung oleh browser Anda.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      });
+
+      mediaStreamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setCameraActive(true);
+      }
+
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        // @ts-ignore
+        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+        // @ts-ignore
+        if (capabilities.torch) {
+          setTorchSupported(true);
+        }
+      }
+    } catch (err: any) {
+      console.error('Camera Access Error:', err);
+      setCameraError(
+        'Kamera dibutuhkan untuk scan barcode. Aktifkan izin kamera pada browser lalu coba kembali.'
+      );
+    }
+  };
+
+  // 1. Start Camera Stream on Mount & Clean up on Unmount
+  useEffect(() => {
+    startCameraSession();
 
     return () => {
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
+      stopCamera();
     };
   }, []);
 
@@ -240,6 +255,9 @@ export default function DriverScanPage() {
     if (isLocked) return;
     setIsLocked(true); // Lock scanner immediately to prevent duplicate requests
 
+    // HARD-STOP CAMERA IMMEDIATELY ON DETECTION
+    stopCamera();
+
     const cleanResi = rawResi.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
     setScannedResi(cleanResi);
     setDetectedBadge(true);
@@ -322,6 +340,7 @@ export default function DriverScanPage() {
     setManualResiInput('');
     setIsManualOpen(false);
     setShowSlowScanTip(false);
+    startCameraSession();
   };
 
   const handleManualSubmit = (e: React.FormEvent) => {
@@ -651,7 +670,7 @@ export default function DriverScanPage() {
                   value={manualResiInput}
                   onChange={(e) => setManualResiInput(e.target.value)}
                   placeholder="Contoh: HDL2608310001"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono font-bold text-sm uppercase"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono font-bold text-base uppercase"
                 />
               </div>
 

@@ -16,7 +16,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans max-w-md mx-auto relative border-x border-slate-800 shadow-2xl">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans w-full max-w-md mx-auto relative border-x border-slate-800/80 shadow-2xl">
       {/* Mobile Top Header */}
       <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -34,10 +34,10 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
       </header>
 
       {/* Main Page Content */}
-      <main className="flex-1 p-4 pb-24 overflow-y-auto">{children}</main>
+      <main className="flex-1 p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] overflow-y-auto">{children}</main>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-3 py-2 flex items-center justify-around z-50">
+      {/* Mobile Bottom Navigation Bar with iOS Safe Area Padding */}
+      <nav className="fixed bottom-0 left-0 right-0 w-full max-w-md mx-auto bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] flex items-center justify-around z-50">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -49,14 +49,14 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition ${
+              className={`flex flex-col items-center justify-center gap-1 min-w-[56px] min-h-[44px] px-3 py-1.5 rounded-xl transition ${
                 isActive
                   ? 'text-sky-400 bg-sky-950/50 font-bold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <Icon className="w-5 h-5" />
-              <span className="text-[10px]">{item.label}</span>
+              <span className="text-[10px] font-medium">{item.label}</span>
             </Link>
           );
         })}

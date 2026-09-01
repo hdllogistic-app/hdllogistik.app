@@ -136,6 +136,7 @@ export async function getDriverDeliveriesService(
       success: true,
       selectedDate: formattedDateStr,
       summary: {
+        totalDeliveries: assignments.length,
         totalPackages: assignments.length,
         deliveryCount: actionableCount,
         successCount,

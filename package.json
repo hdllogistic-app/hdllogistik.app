@@ -25,7 +25,8 @@
     "test:attendance": "tsx src/modules/attendance/__tests__/attendance-geofence.test.ts",
     "test:delivery-execution": "tsx src/modules/delivery/__tests__/delivery-execution.test.ts",
     "test:driver-delivery-list": "tsx src/modules/delivery/__tests__/driver-delivery-list.test.ts",
-    "test:driver-scan": "tsx src/modules/delivery/__tests__/driver-scan.test.ts"
+    "test:driver-scan": "tsx src/modules/delivery/__tests__/driver-scan.test.ts",
+    "test:pwa-mobile": "tsx src/modules/pwa/__tests__/pwa-mobile.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1123.0",

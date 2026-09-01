@@ -1,0 +1,19 @@
+{
+  "name": "HDL LOGISTIK",
+  "short_name": "HDL LOGISTIK",
+  "description": "Sistem Operasional HDL LOGISTIK",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

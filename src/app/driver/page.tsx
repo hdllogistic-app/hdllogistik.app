@@ -26,7 +26,13 @@ export default function DriverHomePage() {
         const data = await res.json();
         if (data.success) {
           if (data.driverName) setDriverName(data.driverName);
-          if (data.summary) setSummary(data.summary);
+          if (data.summary) {
+            setSummary({
+              totalDeliveries: Number(data.summary.totalDeliveries ?? data.summary.totalPackages ?? 0),
+              successCount: Number(data.summary.successCount ?? 0),
+              pendingCount: Number(data.summary.pendingCount ?? 0),
+            });
+          }
         }
       } catch (err) {
         console.error('Failed to load driver home data:', err);
