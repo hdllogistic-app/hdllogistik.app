@@ -3,7 +3,7 @@ import {
   formatWhatsAppUrl,
   sanitizeLocationUrl,
 } from '../services/delivery-execution.service';
-import { validateProofFile, generateDeliveryProofObjectKey } from '@/lib/storage/r2';
+import { validateProofFile, generateDeliveryProofObjectKey, isR2DeliveryConfigured } from '@/lib/storage/r2';
 
 async function runDeliveryExecutionTests() {
   console.log('\n=== Running Driver Delivery Execution & Proof Security Audit Tests ===\n');
@@ -124,6 +124,22 @@ async function runDeliveryExecutionTests() {
     assert(
       finCheck.billingModeUnchanged && finCheck.noPaymentCreated && finCheck.noInvoiceCreated,
       'Delivery TTD has zero financial side-effects (payment/billing states remain separate)'
+    );
+
+    // 9. Dedicated R2 Delivery Credential Audit
+    const testR2Segregation = () => {
+      const origKey = process.env.R2_DELIVERY_ACCESS_KEY_ID;
+      delete process.env.R2_DELIVERY_ACCESS_KEY_ID;
+
+      const isConfiguredWithoutKey = isR2DeliveryConfigured();
+
+      if (origKey) process.env.R2_DELIVERY_ACCESS_KEY_ID = origKey;
+      return !isConfiguredWithoutKey;
+    };
+
+    assert(
+      testR2Segregation(),
+      'Delivery R2 config strictly requires R2_DELIVERY_ACCESS_KEY_ID (no payment credential crossover)'
     );
   } catch (err: any) {
     console.error('Test Suite Error:', err);

@@ -51,16 +51,16 @@ export function getR2Client(): S3Client | null {
 
 export function getR2DeliveryConfig(): R2Config | null {
   const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_DELIVERY_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_DELIVERY_SECRET_ACCESS_KEY || process.env.R2_SECRET_ACCESS_KEY;
+  const accessKeyId = process.env.R2_DELIVERY_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_DELIVERY_SECRET_ACCESS_KEY;
   const bucketName = process.env.R2_DELIVERY_BUCKET_NAME;
-  const endpoint = process.env.R2_DELIVERY_ENDPOINT || process.env.R2_ENDPOINT || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
+  const endpoint = process.env.R2_ENDPOINT || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
 
-  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName || !endpoint) {
-    return null;
+  if (!accessKeyId || !secretAccessKey || !bucketName || !endpoint) {
+    return null; // Delivery credentials not fully configured
   }
 
-  return { accountId, accessKeyId, secretAccessKey, bucketName, endpoint };
+  return { accountId: accountId || '', accessKeyId, secretAccessKey, bucketName, endpoint };
 }
 
 export function isR2DeliveryConfigured(): boolean {
