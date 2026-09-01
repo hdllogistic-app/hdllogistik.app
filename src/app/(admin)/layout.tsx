@@ -85,6 +85,12 @@ export default function AdminLayout({
                 Payment
               </Link>
               <Link
+                href="/finance/invoices"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
+              >
+                Invoice Penagihan
+              </Link>
+              <Link
                 href="/finance/cashflow"
                 className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium text-xs"
               >
