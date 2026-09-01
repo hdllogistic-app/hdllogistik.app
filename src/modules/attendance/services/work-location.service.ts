@@ -26,32 +26,6 @@ export async function getWorkLocationsService(onlyActive = false) {
       orderBy: { name: 'asc' },
     });
 
-    // Auto-seed default location if database has 0 locations
-    if (locations.length === 0) {
-      const defaultLoc = await prisma.workLocation.create({
-        data: {
-          name: 'Gudang Utama HDL',
-          latitude: new Prisma.Decimal('-6.20000000'),
-          longitude: new Prisma.Decimal('106.81666600'),
-          radiusMeters: new Prisma.Decimal('100.00'),
-          active: true,
-        },
-      });
-      return {
-        success: true,
-        locations: [
-          {
-            id: defaultLoc.id,
-            name: defaultLoc.name,
-            latitude: defaultLoc.latitude.toNumber(),
-            longitude: defaultLoc.longitude.toNumber(),
-            radiusMeters: defaultLoc.radiusMeters.toNumber(),
-            active: defaultLoc.active,
-          },
-        ],
-      };
-    }
-
     const items = locations.map((loc) => ({
       id: loc.id,
       name: loc.name,
@@ -82,8 +56,14 @@ export async function createWorkLocationService(
     if (payload.latitude === undefined || isNaN(payload.latitude)) {
       return { success: false, error: 'Latitude wajib diisi.' };
     }
+    if (payload.latitude < -90 || payload.latitude > 90) {
+      return { success: false, error: 'Nilai Latitude tidak valid (harus di antara -90 dan 90).' };
+    }
     if (payload.longitude === undefined || isNaN(payload.longitude)) {
       return { success: false, error: 'Longitude wajib diisi.' };
+    }
+    if (payload.longitude < -180 || payload.longitude > 180) {
+      return { success: false, error: 'Nilai Longitude tidak valid (harus di antara -180 dan 180).' };
     }
     if (!payload.radiusMeters || payload.radiusMeters <= 0) {
       return { success: false, error: 'Radius (meter) harus lebih besar dari 0.' };
@@ -160,9 +140,15 @@ export async function updateWorkLocationService(
       dataToUpdate.name = payload.name.trim();
     }
     if (payload.latitude !== undefined) {
+      if (isNaN(payload.latitude) || payload.latitude < -90 || payload.latitude > 90) {
+        return { success: false, error: 'Nilai Latitude tidak valid (harus di antara -90 dan 90).' };
+      }
       dataToUpdate.latitude = new Prisma.Decimal(payload.latitude.toFixed(8));
     }
     if (payload.longitude !== undefined) {
+      if (isNaN(payload.longitude) || payload.longitude < -180 || payload.longitude > 180) {
+        return { success: false, error: 'Nilai Longitude tidak valid (harus di antara -180 dan 180).' };
+      }
       dataToUpdate.longitude = new Prisma.Decimal(payload.longitude.toFixed(8));
     }
     if (payload.radiusMeters !== undefined) {

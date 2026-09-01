@@ -39,8 +39,8 @@ export async function POST(request: NextRequest) {
   }
 
   const user = await verifyCurrentUser();
-  if (!user || (user.role !== 'OWNER' && user.role !== 'ADMIN' && user.role !== 'FINANCE')) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  if (!user || (user.role !== 'OWNER' && user.role !== 'ADMIN')) {
+    return NextResponse.json({ success: false, error: 'Akses ditolak. Hanya OWNER dan ADMIN yang dapat mengelola lokasi absensi.' }, { status: 403 });
   }
 
   try {

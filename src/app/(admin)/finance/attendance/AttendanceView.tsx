@@ -17,6 +17,8 @@ import {
   Plus,
   Edit2,
   X,
+  Navigation,
+  RefreshCw,
 } from 'lucide-react';
 import {
   AttendanceItemDTO,
@@ -70,6 +72,67 @@ export function AttendanceView() {
   const [locRadius, setLocRadius] = useState<string>('100');
   const [submittingLoc, setSubmittingLoc] = useState<boolean>(false);
 
+  // GPS State for Admin Work Location Form
+  const [detectingGps, setDetectingGps] = useState<boolean>(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const [gpsStatusMessage, setGpsStatusMessage] = useState<string | null>(null);
+  const [gpsStatusLevel, setGpsStatusLevel] = useState<'SUCCESS_HIGH' | 'SUCCESS_MED' | 'SUCCESS_LOW' | 'ERROR' | null>(null);
+
+  const handleDetectGpsLocation = () => {
+    setDetectingGps(true);
+    setGpsStatusMessage('Pastikan izin lokasi browser aktif.');
+    setGpsStatusLevel(null);
+
+    if (!navigator.geolocation) {
+      setGpsStatusMessage('Browser Anda tidak mendukung fitur Geolocation GPS.');
+      setGpsStatusLevel('ERROR');
+      setDetectingGps(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const acc = Math.round(position.coords.accuracy);
+
+        setLocLat(lat.toString());
+        setLocLng(lng.toString());
+        setGpsAccuracy(acc);
+
+        if (acc <= 30) {
+          setGpsStatusMessage(`Lokasi berhasil ditemukan. GPS akurat ±${acc} meter.`);
+          setGpsStatusLevel('SUCCESS_HIGH');
+        } else if (acc <= 100) {
+          setGpsStatusMessage(`Akurasi GPS ±${acc} meter. Tunggu beberapa saat untuk hasil lebih baik.`);
+          setGpsStatusLevel('SUCCESS_MED');
+        } else {
+          setGpsStatusMessage(`GPS kurang akurat (±${acc} meter). Coba ulangi deteksi lokasi.`);
+          setGpsStatusLevel('SUCCESS_LOW');
+        }
+        setDetectingGps(false);
+      },
+      (error) => {
+        let msg = 'Gagal mendeteksi lokasi GPS.';
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = 'Izin lokasi dibutuhkan untuk mendeteksi titik GPS. Aktifkan izin lokasi pada browser lalu coba kembali.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          msg = 'Lokasi GPS tidak dapat ditemukan. Pastikan GPS perangkat aktif dan coba kembali.';
+        } else if (error.code === error.TIMEOUT) {
+          msg = 'Deteksi lokasi terlalu lama. Silakan coba kembali.';
+        }
+        setGpsStatusMessage(msg);
+        setGpsStatusLevel('ERROR');
+        setDetectingGps(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      }
+    );
+  };
+
   const fetchLocations = async () => {
     setLoadingLocations(true);
     try {
@@ -96,6 +159,9 @@ export function AttendanceView() {
     setLocLat(String(loc.latitude));
     setLocLng(String(loc.longitude));
     setLocRadius(String(loc.radiusMeters));
+    setGpsAccuracy(null);
+    setGpsStatusMessage(null);
+    setGpsStatusLevel(null);
   };
 
   const handleResetLocForm = () => {
@@ -104,6 +170,9 @@ export function AttendanceView() {
     setLocLat('');
     setLocLng('');
     setLocRadius('100');
+    setGpsAccuracy(null);
+    setGpsStatusMessage(null);
+    setGpsStatusLevel(null);
   };
 
   const handleSaveLocation = async (e: React.FormEvent) => {
@@ -582,6 +651,54 @@ export function AttendanceView() {
                     className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono"
                   />
                 </div>
+              </div>
+
+              {/* GPS Detection Button & Helper */}
+              <div className="space-y-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handleDetectGpsLocation}
+                  disabled={detectingGps}
+                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-sky-400 border border-slate-800 hover:border-sky-500/40 rounded-xl font-bold flex items-center justify-center gap-2 transition disabled:opacity-50"
+                >
+                  {detectingGps ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                  ) : locLat && locLng ? (
+                    <RefreshCw className="w-4 h-4 text-sky-400" />
+                  ) : (
+                    <Navigation className="w-4 h-4 text-sky-400" />
+                  )}
+                  <span>
+                    {detectingGps
+                      ? 'Mendeteksi GPS...'
+                      : locLat && locLng
+                      ? '↻ Cek Ulang Lokasi'
+                      : '📍 Cek Lokasi GPS Saya'}
+                  </span>
+                </button>
+
+                {gpsStatusMessage ? (
+                  <div
+                    className={`p-2 rounded-xl border text-[11px] flex items-center gap-2 ${
+                      gpsStatusLevel === 'SUCCESS_HIGH'
+                        ? 'bg-emerald-950/60 border-emerald-800/60 text-emerald-300'
+                        : gpsStatusLevel === 'SUCCESS_MED'
+                        ? 'bg-amber-950/60 border-amber-800/60 text-amber-300'
+                        : gpsStatusLevel === 'SUCCESS_LOW'
+                        ? 'bg-red-950/60 border-red-800/60 text-red-300'
+                        : gpsStatusLevel === 'ERROR'
+                        ? 'bg-red-950/80 border-red-800/80 text-red-200 font-semibold'
+                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{gpsStatusMessage}</span>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-500 italic text-center">
+                    Pastikan izin lokasi browser aktif.
+                  </p>
+                )}
               </div>
 
               <div className="flex justify-end pt-1">
