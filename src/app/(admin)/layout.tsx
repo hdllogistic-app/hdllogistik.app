@@ -59,6 +59,12 @@ export default function AdminLayout({
               >
                 Rincian Manifest
               </Link>
+              <Link
+                href="/monitoring/delivery"
+                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+              >
+                Monitoring Delivery
+              </Link>
               <div className="px-3 py-2 rounded-md text-slate-500 cursor-not-allowed">
                 Finance & Cashflow
               </div>
