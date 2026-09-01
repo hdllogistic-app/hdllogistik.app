@@ -82,8 +82,18 @@ export default function DriverScanPage() {
   const [isManualOpen, setIsManualOpen] = useState<boolean>(false);
   const [manualResiInput, setManualResiInput] = useState<string>('');
 
+  // ZXing reader instance ref
+  const zxingReaderRef = useRef<any>(null);
+  const [playRequired, setPlayRequired] = useState<boolean>(false);
+
   // Hard Stop Camera Streams & Detach Video Elements
   const stopCamera = () => {
+    if (zxingReaderRef.current) {
+      try {
+        zxingReaderRef.current.reset();
+      } catch (e) {}
+      zxingReaderRef.current = null;
+    }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => {
         try {
@@ -97,38 +107,71 @@ export default function DriverScanPage() {
     }
     setCameraActive(false);
     setTorchOn(false);
+    setPlayRequired(false);
   };
 
   const startCameraSession = async () => {
     stopCamera();
     setCameraError(null);
+    setPlayRequired(false);
+
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setCameraError('Kamera tidak didukung oleh browser Anda.');
+        setCameraError('Kamera tidak tersedia pada perangkat ini.');
         return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      });
+      let stream: MediaStream | null = null;
+
+      // Constraint 1: Ideal HD Environment Camera
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+      } catch (e1) {
+        // Constraint 2: General Environment Camera Fallback
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false,
+          });
+        } catch (e2) {
+          // Constraint 3: Basic Video Fallback
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
+      }
+
+      if (!stream) {
+        setCameraError('Kamera tidak dapat digunakan pada perangkat ini.');
+        return;
+      }
 
       mediaStreamRef.current = stream;
 
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.setAttribute('autoplay', 'true');
-        videoRef.current.setAttribute('muted', 'true');
+        const videoEl = videoRef.current;
+        videoEl.srcObject = stream;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.setAttribute('autoplay', 'true');
+        videoEl.setAttribute('muted', 'true');
+
         try {
-          await videoRef.current.play();
-        } catch (e) {
-          console.log('Video play error ignored:', e);
+          await videoEl.play();
+          setCameraActive(true);
+        } catch (playErr) {
+          console.error('video.play() rejected:', playErr);
+          setPlayRequired(true);
         }
-        setCameraActive(true);
       }
 
       const track = stream.getVideoTracks()[0];
@@ -142,9 +185,25 @@ export default function DriverScanPage() {
       }
     } catch (err: any) {
       console.error('Camera Access Error:', err);
-      setCameraError(
-        'Kamera dibutuhkan untuk scan barcode. Aktifkan izin kamera pada browser lalu coba kembali.'
-      );
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+        setCameraError('Kamera tidak diizinkan. Aktifkan izin kamera untuk HDL LOGISTIK.');
+      } else {
+        setCameraError('Kamera tidak dapat digunakan pada perangkat ini.');
+      }
+    }
+  };
+
+  const handleManualActivatePlay = async () => {
+    if (videoRef.current && mediaStreamRef.current) {
+      try {
+        await videoRef.current.play();
+        setPlayRequired(false);
+        setCameraActive(true);
+      } catch (err) {
+        console.error('Manual play failed:', err);
+      }
+    } else {
+      startCameraSession();
     }
   };
 
@@ -205,7 +264,7 @@ export default function DriverScanPage() {
           isNativeDetectorAvailable = true;
 
           intervalId = setInterval(async () => {
-            if (videoRef.current && videoRef.current.readyState === 4 && !isLocked) {
+            if (videoRef.current && videoRef.current.readyState >= 2 && !isLocked) {
               try {
                 const barcodes = await detector.detect(videoRef.current);
                 if (barcodes && barcodes.length > 0) {
@@ -235,8 +294,10 @@ export default function DriverScanPage() {
           hints.set(DecodeHintType.TRY_HARDER, true);
 
           const codeReader = new BrowserMultiFormatReader(hints);
+          zxingReaderRef.current = codeReader;
+
           codeReader
-            .decodeFromVideoDevice(null, videoRef.current, (result, err) => {
+            .decodeFromVideoElementContinuously(videoRef.current, (result: any, err: any) => {
               if (result && !isLocked) {
                 const text = result.getText();
                 if (text && text.trim().toUpperCase().startsWith('HDL')) {
@@ -244,7 +305,7 @@ export default function DriverScanPage() {
                 }
               }
             })
-            .catch((e) => {
+            .catch((e: any) => {
               console.log('ZXing decode init error:', e);
             });
         } catch (err) {
@@ -255,6 +316,12 @@ export default function DriverScanPage() {
 
     return () => {
       if (intervalId) clearInterval(intervalId);
+      if (zxingReaderRef.current) {
+        try {
+          zxingReaderRef.current.reset();
+        } catch (e) {}
+        zxingReaderRef.current = null;
+      }
     };
   }, [cameraActive, isLocked]);
 
@@ -419,12 +486,20 @@ export default function DriverScanPage() {
       )}
 
       {/* CAMERA SCANNER VIEWPORT WITH WIDE 1D SCAN BOX & TORCH */}
+      {/* CAMERA SCANNER VIEWPORT WITH REAL VISIBLE VIDEO & Z-INDEX LAYERING */}
       {!assignSuccessMessage && (
-        <div className="relative w-full aspect-[4/3] bg-black border-2 border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
-          <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+        <div className="relative w-full aspect-[4/3] bg-slate-950 border-2 border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
+          {/* REAL VISIBLE VIDEO ELEMENT (z-0) */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-cover z-0"
+          />
 
-          {/* WIDE 1D BARCODE SCANNER OVERLAY BOX (~90% WIDTH) */}
-          <div className="absolute inset-0 border-[3px] border-sky-400/30 rounded-2xl pointer-events-none flex flex-col items-center justify-center p-4">
+          {/* TRANSPARENT SCANNER OVERLAY (z-10) */}
+          <div className="absolute inset-0 z-10 bg-transparent pointer-events-none flex flex-col items-center justify-center p-4">
             <div className="w-[92%] h-28 border-2 border-sky-400 rounded-2xl bg-sky-500/10 relative flex items-center justify-center shadow-[0_0_25px_rgba(56,189,248,0.4)]">
               <div className="w-full h-0.5 bg-sky-400 shadow-[0_0_12px_#38bdf8] animate-pulse" />
               <span className="absolute bottom-2 text-[10px] font-bold text-sky-200 tracking-wider uppercase bg-slate-950/80 px-2 py-0.5 rounded">
@@ -441,12 +516,12 @@ export default function DriverScanPage() {
             </span>
           </div>
 
-          {/* Flashlight Torch Toggle */}
-          {torchSupported && (
+          {/* FLASHLIGHT TORCH TOGGLE (z-20) */}
+          {torchSupported && cameraActive && (
             <button
               type="button"
               onClick={toggleTorch}
-              className={`absolute top-3 right-3 p-2.5 rounded-full border shadow-xl transition ${
+              className={`absolute top-3 right-3 z-20 p-2.5 rounded-full border shadow-xl transition ${
                 torchOn
                   ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-amber-400/40'
                   : 'bg-slate-900/80 text-slate-300 border-slate-700'
@@ -456,10 +531,35 @@ export default function DriverScanPage() {
             </button>
           )}
 
+          {/* FALLBACK MANUAL PLAY REQUIRED (z-30) */}
+          {playRequired && !cameraError && (
+            <div className="absolute inset-0 z-30 bg-slate-950/90 p-6 flex flex-col items-center justify-center text-center space-y-3">
+              <Camera className="w-10 h-10 text-amber-400 mb-1" />
+              <p className="text-xs text-amber-200 font-semibold">
+                Kamera siap, tekan tombol di bawah untuk menampilkan preview.
+              </p>
+              <button
+                type="button"
+                onClick={handleManualActivatePlay}
+                className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-sky-600/30"
+              >
+                Aktifkan Kamera
+              </button>
+            </div>
+          )}
+
+          {/* CAMERA ERROR OVERLAY (z-30) */}
           {cameraError && (
-            <div className="absolute inset-0 bg-slate-950/90 p-6 flex flex-col items-center justify-center text-center space-y-3">
+            <div className="absolute inset-0 z-30 bg-slate-950/90 p-6 flex flex-col items-center justify-center text-center space-y-3">
               <Camera className="w-10 h-10 text-red-400 mb-1" />
               <p className="text-xs text-red-200 font-semibold">{cameraError}</p>
+              <button
+                type="button"
+                onClick={startCameraSession}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700"
+              >
+                Coba Lagi
+              </button>
             </div>
           )}
         </div>
