@@ -1,4 +1,4 @@
-export type UserRoleType = 'OWNER' | 'ADMIN' | 'OPS' | 'FINANCE' | 'DRIVER';
+export type UserRoleType = 'OWNER' | 'ADMIN' | 'OPS' | 'FINANCE' | 'DRIVER' | 'HELPER';
 
 export const USER_ROLES = {
   OWNER: 'OWNER' as UserRoleType,
@@ -6,6 +6,7 @@ export const USER_ROLES = {
   OPS: 'OPS' as UserRoleType,
   FINANCE: 'FINANCE' as UserRoleType,
   DRIVER: 'DRIVER' as UserRoleType,
+  HELPER: 'HELPER' as UserRoleType,
 };
 
 /**
@@ -21,6 +22,8 @@ export function getRoleDefaultRedirect(role: string): string {
       return '/ops';
     case 'DRIVER':
       return '/driver';
+    case 'HELPER':
+      return '/helper';
     default:
       return '/login';
   }

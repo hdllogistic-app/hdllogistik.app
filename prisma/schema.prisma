@@ -20,6 +20,7 @@ enum UserRole {
   OPS
   FINANCE
   DRIVER
+  HELPER
 }
 
 enum EmployeeDivision {

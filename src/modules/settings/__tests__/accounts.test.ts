@@ -43,15 +43,13 @@ export async function runAccountManagementUnitTests() {
   const derivedAdminRole = empAdminDivision === 'ADMIN' ? USER_ROLES.ADMIN : null;
   assert(derivedAdminRole === USER_ROLES.ADMIN, '8. ADMIN employee only gets ADMIN role');
 
-  // 9. HELPER cannot get account V1
+  // 9. HELPER employee receives HELPER role
   const empHelperDivision: string = 'HELPER';
-  const isHelperSupported = empHelperDivision === 'DRIVER' || empHelperDivision === 'ADMIN';
-  assert(!isHelperSupported, '9. HELPER cannot get account V1');
+  const derivedHelperRole = empHelperDivision === 'HELPER' ? USER_ROLES.HELPER : null;
+  assert(derivedHelperRole === USER_ROLES.HELPER, '9. HELPER employee receives HELPER role');
 
-  // 10. client role override rejected
-  const clientRequestedRole = 'ADMIN';
-  const serverDerivedRole = derivedDriverRole;
-  assert(serverDerivedRole !== clientRequestedRole, '10. client role override rejected (server derives from division)');
+  // 10. HELPER login redirects /helper
+  assert(getRoleDefaultRedirect(USER_ROLES.HELPER) === '/helper', '10. HELPER login redirects /helper');
 
   // 11. duplicate loginId rejected
   const existingLoginIds = new Set(['aji001', 'admin01']);

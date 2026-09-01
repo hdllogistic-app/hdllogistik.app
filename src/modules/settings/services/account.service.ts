@@ -130,6 +130,8 @@ export async function createAccountService(
       derivedRole = 'DRIVER';
     } else if (employee.division === 'ADMIN') {
       derivedRole = 'ADMIN';
+    } else if (employee.division === 'HELPER') {
+      derivedRole = 'HELPER';
     } else {
       return {
         success: false,

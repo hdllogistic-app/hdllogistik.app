@@ -55,6 +55,9 @@ export async function proxy(request: NextRequest) {
     if (role === USER_ROLES.DRIVER) {
       return NextResponse.redirect(new URL('/driver', request.url));
     }
+    if (role === USER_ROLES.HELPER) {
+      return NextResponse.redirect(new URL('/helper', request.url));
+    }
     return NextResponse.next();
   }
 
@@ -62,6 +65,9 @@ export async function proxy(request: NextRequest) {
   if (pathname.startsWith('/ops')) {
     if (role === USER_ROLES.DRIVER) {
       return NextResponse.redirect(new URL('/driver', request.url));
+    }
+    if (role === USER_ROLES.HELPER) {
+      return NextResponse.redirect(new URL('/helper', request.url));
     }
     if (role === USER_ROLES.FINANCE) {
       return NextResponse.redirect(new URL('/', request.url));
@@ -71,11 +77,22 @@ export async function proxy(request: NextRequest) {
 
   // Driver Area (`/driver`)
   if (pathname.startsWith('/driver')) {
+    if (role === USER_ROLES.HELPER) {
+      return NextResponse.redirect(new URL('/helper', request.url));
+    }
     if (
       role === USER_ROLES.ADMIN ||
       role === USER_ROLES.FINANCE ||
       role === USER_ROLES.OPS
     ) {
+      return NextResponse.redirect(new URL(getRoleDefaultRedirect(role), request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Helper Area (`/helper`)
+  if (pathname.startsWith('/helper')) {
+    if (role !== USER_ROLES.HELPER && role !== USER_ROLES.OWNER) {
       return NextResponse.redirect(new URL(getRoleDefaultRedirect(role), request.url));
     }
     return NextResponse.next();

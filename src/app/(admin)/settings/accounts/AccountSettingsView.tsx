@@ -294,6 +294,7 @@ export function AccountSettingsView() {
           >
             <option value="ALL">Semua Role</option>
             <option value="DRIVER">DRIVER</option>
+            <option value="HELPER">HELPER</option>
             <option value="ADMIN">ADMIN</option>
           </select>
         </div>
@@ -372,7 +373,7 @@ export function AccountSettingsView() {
 
                     <td className="p-4 text-center whitespace-nowrap space-x-1.5">
                       {!acc.userId ? (
-                        acc.division === 'DRIVER' || acc.division === 'ADMIN' ? (
+                        acc.division === 'DRIVER' || acc.division === 'ADMIN' || acc.division === 'HELPER' ? (
                           <button
                             onClick={() => handleOpenCreateModal(acc)}
                             className="px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-[11px] font-bold transition inline-flex items-center gap-1 shadow"
