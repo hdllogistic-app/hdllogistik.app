@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { requireRole } from '@/lib/auth/dal';
 import { USER_ROLES } from '@/lib/auth/roles';
-import { Coins, UserCheck, Truck, ChevronRight } from 'lucide-react';
+import { Coins, UserCheck, Truck, Building2, ChevronRight } from 'lucide-react';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,7 +23,7 @@ export default async function SettingsLandingPage() {
           </div>
           <h1 className="text-2xl font-bold text-slate-100">HDL LOGISTIK — Pengaturan System</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Kelola master data tarif ongkir, driver operasional, dan armada kendaraan perusahaan.
+            Kelola master data customer penagihan, tarif ongkir, driver operasional, dan armada kendaraan perusahaan.
           </p>
         </div>
         <div className="text-xs text-slate-400 font-mono bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 shrink-0">
@@ -31,7 +31,26 @@ export default async function SettingsLandingPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Master Customer */}
+        <Link
+          href="/settings/customers"
+          className="group p-6 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-sky-500/40 hover:bg-slate-900 transition-all shadow-xl space-y-4"
+        >
+          <div className="flex justify-between items-start">
+            <div className="p-3.5 bg-sky-500/10 border border-sky-500/20 text-sky-400 rounded-xl group-hover:scale-105 transition-transform">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-sky-400 group-hover:translate-x-1 transition-all" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white group-hover:text-sky-400 transition">Master Customer</h3>
+            <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+              Kelola master data customer penagihan, kode customer, kontak, dan alamat penagihan resmi.
+            </p>
+          </div>
+        </Link>
+
         {/* Database Ongkir */}
         <Link
           href="/settings/shipping-rates"
