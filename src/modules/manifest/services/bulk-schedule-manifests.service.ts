@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 
 export const bulkScheduleSchema = z.object({
-  area: z.string().trim().min(1, 'Area / Wilayah Tujuan wajib ditentukan.'),
+  area: z.string().trim().optional(),
   manifestIds: z.array(z.string().uuid('ID Manifest tidak valid.')).min(1, 'Pilih minimal 1 manifest untuk dijadwalkan.'),
   driverId: z.string().uuid('Pilihan Driver tidak valid.'),
   vehicleId: z.string().uuid('Pilihan Kendaraan tidak valid.'),
@@ -20,12 +20,11 @@ export interface BulkScheduleResult {
 }
 
 /**
- * Domain Service for Bulk Scheduling Manifests to Driver & Vehicle (V1.1 Patch).
+ * Domain Service for Bulk Scheduling Manifests to Driver & Vehicle (V1.2 Flexible Multi-Area).
  * - Enforces server-side revalidation of Driver & Vehicle active status.
- * - Revalidates area context anti-injection matching recipientProvinceArea.
+ * - Supports multi-area batches across different destination areas.
  * - Enforces strict DeliveryStatus.READY eligibility and rejects batch if ANY active assignment exists.
  * - Uses atomic conditional state transitions (updateMany) inside 1 transaction for concurrency safety.
- * - NO reassignment in V1: active assignments block batch scheduling completely.
  */
 export async function bulkScheduleManifestsService(
   rawInput: BulkScheduleInput,
@@ -85,7 +84,7 @@ export async function bulkScheduleManifestsService(
       };
     }
 
-    // 3. Revalidate Selected Manifests State & Anti-Injection Area Context
+    // 3. Revalidate Selected Manifests State
     const manifests = await prisma.manifest.findMany({
       where: {
         id: { in: input.manifestIds },
@@ -109,14 +108,6 @@ export async function bulkScheduleManifestsService(
     }
 
     for (const m of manifests) {
-      // Area Anti-Injection Protection
-      if (m.recipientProvinceArea !== input.area) {
-        return {
-          success: false,
-          error: `Manifest ${m.resiNumber} berada di wilayah ${m.recipientProvinceArea}, tidak cocok dengan area filter ${input.area}.`,
-        };
-      }
-
       // Delivery Status Eligibility
       if (!m.delivery || m.delivery.status !== 'READY') {
         const currentStatus = m.delivery?.status || 'UNKNOWN';
@@ -126,11 +117,11 @@ export async function bulkScheduleManifestsService(
         };
       }
 
-      // Active Assignment Check (NO REASSIGNMENT IN V1)
+      // Active Assignment Check (NO REASSIGNMENT IN BULK SCHEDULE)
       if (m.delivery.assignments.length > 0) {
         return {
           success: false,
-          error: `Manifest ${m.resiNumber} sudah memiliki penugasan driver aktif. Reassignment tidak diizinkan pada versi ini.`,
+          error: `Manifest ${m.resiNumber} sudah memiliki penugasan driver aktif. Gunakan Edit Penjadwalan untuk mengubah penugasan.`,
         };
       }
     }
@@ -167,7 +158,6 @@ export async function bulkScheduleManifestsService(
           },
         });
 
-        // If another operator updated status first, updateResult.count will be 0
         if (updateResult.count !== 1) {
           throw new Error(`CONCURRENCY_CONFLICT:${m.resiNumber}`);
         }
@@ -199,7 +189,7 @@ export async function bulkScheduleManifestsService(
               driverName: driver.fullName,
               vehicleId: vehicle.id,
               vehiclePlate: vehicle.plateNumber,
-              area: input.area,
+              area: m.recipientProvinceArea,
             }),
           },
         });

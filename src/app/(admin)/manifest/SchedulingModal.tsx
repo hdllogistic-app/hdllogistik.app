@@ -71,6 +71,17 @@ export function SchedulingModal({
   const totalWeight = selectedManifests.reduce((sum, m) => sum + m.weightKg, 0);
   const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
 
+  // Derive area breakdown for selected manifests
+  const areaCounts = selectedManifests.reduce((acc, m) => {
+    const a = m.recipientProvinceArea || 'Wilayah Lain';
+    acc[a] = (acc[a] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const uniqueAreas = Object.keys(areaCounts);
+  const isSingleArea = uniqueAreas.length === 1;
+  const areaDisplayTitle = isSingleArea ? uniqueAreas[0] : `${uniqueAreas.length} Area Terpilih`;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -92,7 +103,7 @@ export function SchedulingModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          area,
+          area: isSingleArea ? uniqueAreas[0] : 'MULTIPLE',
           manifestIds: selectedManifests.map((m) => m.id),
           driverId: selectedDriverId,
           vehicleId: selectedVehicleId,
@@ -154,8 +165,18 @@ export function SchedulingModal({
           <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2 text-xs">
             <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
               <span className="text-slate-400 font-medium">Area / Wilayah Tujuan:</span>
-              <span className="text-sky-400 font-bold uppercase">{area}</span>
+              <span className="text-sky-400 font-bold uppercase">{areaDisplayTitle}</span>
             </div>
+            {!isSingleArea && (
+              <div className="text-[11px] text-slate-400 border-b border-slate-800/60 pb-1.5 space-y-0.5 font-mono">
+                {uniqueAreas.map((a) => (
+                  <div key={a} className="flex justify-between">
+                    <span>• {a}:</span>
+                    <span>{areaCounts[a]} resi</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
               <span className="text-slate-400 font-medium">Jumlah Manifest Dipilih:</span>
               <span className="text-white font-mono font-bold">{selectedManifests.length} Resi</span>
