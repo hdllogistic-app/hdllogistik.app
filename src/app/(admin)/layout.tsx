@@ -34,43 +34,43 @@ export default function AdminLayout({
       {/* Main Admin Area */}
       <div className="flex-1 flex">
         {/* Desktop Sidebar */}
-        <aside className="w-64 border-r border-slate-800 bg-slate-950/40 p-4 hidden md:block shrink-0">
+        <aside className="w-64 border-r border-slate-800 bg-[#151515] p-4 hidden md:block shrink-0 flex flex-col justify-between">
           <nav className="space-y-4 text-sm">
             {/* Operasional */}
             <div className="space-y-1">
-              <div className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <div className="px-3 py-1 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 Operasional
               </div>
               <Link
                 href="/"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+                className="block px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition font-medium"
               >
                 Dashboard
               </Link>
               <Link
                 href="/manifest/input"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+                className="block px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition font-medium"
               >
                 Input Manifest
               </Link>
               <Link
                 href="/manifest"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+                className="block px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition font-medium"
               >
                 Rincian Manifest
               </Link>
               <Link
                 href="/manifest/check"
-                className="block px-3 py-2 rounded-md text-sky-400 hover:text-sky-300 hover:bg-sky-950/30 transition font-medium flex items-center justify-between"
+                className="block px-3 py-2 rounded-lg text-amber-400 bg-amber-500/10 border border-amber-500/20 font-bold transition flex items-center justify-between shadow-sm"
               >
                 <span>Cek Manifest</span>
-                <span className="text-[10px] px-1.5 py-0.5 bg-sky-500/20 border border-sky-500/30 rounded font-mono font-bold">
+                <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded font-mono font-bold">
                   TRACK
                 </span>
               </Link>
               <Link
                 href="/monitoring/delivery"
-                className="block px-3 py-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-800/50 transition font-medium"
+                className="block px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition font-medium"
               >
                 Monitoring Delivery
               </Link>
