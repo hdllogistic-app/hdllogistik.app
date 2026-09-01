@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Truck, CheckCircle2, Clock, ChevronRight, Loader2, Calendar } from 'lucide-react';
+import { Truck, CheckCircle2, Clock, ChevronRight, Loader2, Calendar, Package } from 'lucide-react';
 
 interface DeliverySummary {
   totalDeliveries: number;
@@ -88,6 +88,25 @@ export default function DriverHomePage() {
       {/* Quick Action Navigation */}
       <div className="space-y-3 pt-2">
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aksi Cepat</h3>
+
+        <Link
+          href="/driver/scan"
+          className="p-4 bg-gradient-to-r from-sky-950/80 to-slate-900 border border-sky-800/60 hover:border-sky-500 rounded-xl flex items-center justify-between group transition shadow-lg"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-sky-500/20 text-sky-400 rounded-lg group-hover:scale-110 transition">
+              <Package className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white group-hover:text-sky-300 transition flex items-center gap-1.5">
+                <span>📦 SCAN PAKET</span>
+                <span className="px-1.5 py-0.5 bg-sky-500/20 text-sky-300 text-[10px] rounded font-mono">Self-Assign</span>
+              </h4>
+              <p className="text-[11px] text-slate-300">Scan barcode resi untuk jadwalkan tugas ke Anda</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-sky-400 group-hover:translate-x-1 transition" />
+        </Link>
 
         <Link
           href="/driver/delivery"
