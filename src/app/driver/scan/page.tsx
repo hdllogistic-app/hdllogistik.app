@@ -20,6 +20,8 @@ import {
   ChevronRight,
   Zap,
   ZapOff,
+  Clock,
+  UserCheck,
 } from 'lucide-react';
 import { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } from '@zxing/library';
 
@@ -35,6 +37,9 @@ interface ScanResiPreview {
   koliCount: number;
   status: string;
   isEligibleForScan: boolean;
+  isPendingRescan?: boolean;
+  lastPendingReasonTitle?: string | null;
+  previousDriverName?: string | null;
   isAssignedToSelf: boolean;
   isAssignedToOther: boolean;
   otherDriverName: string | null;
@@ -164,7 +169,6 @@ export default function DriverScanPage() {
   // 2. Barcode Scanner Engine: Native BarcodeDetector + ZXing Fallback
   useEffect(() => {
     let intervalId: any = null;
-    let zxingControls: any = null;
 
     if (cameraActive && !isLocked) {
       let isNativeDetectorAvailable = false;
@@ -229,9 +233,6 @@ export default function DriverScanPage() {
 
     return () => {
       if (intervalId) clearInterval(intervalId);
-      if (zxingControls && typeof zxingControls.stop === 'function') {
-        zxingControls.stop();
-      }
     };
   }, [cameraActive, isLocked]);
 
@@ -292,10 +293,10 @@ export default function DriverScanPage() {
       const data = await res.json();
 
       if (data.success) {
-        if (data.alreadyAssignedToSelf) {
+        if (data.alreadyAssignedToSelf && !data.isPendingReactivation) {
           setAssignSuccessMessage('Paket ini sudah ada di Delivery Anda.');
         } else {
-          setAssignSuccessMessage(data.message || `✓ PAKET BERHASIL DIJADWALKAN: ${scannedResi}`);
+          setAssignSuccessMessage(data.message || `✓ PAKET MASUK DELIVERY: ${scannedResi}`);
         }
         setAssignedDeliveryId(data.deliveryId || null);
         setPreview(null);
@@ -509,7 +510,7 @@ export default function DriverScanPage() {
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <div>
               <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                BARCODE TERDETEKSI
+                {preview.isPendingRescan ? 'PAKET PENDING TERDETEKSI' : 'BARCODE TERDETEKSI'}
               </span>
               <span className="text-base font-black text-sky-400 font-mono tracking-wider">
                 {preview.resiNumber}
@@ -517,9 +518,11 @@ export default function DriverScanPage() {
             </div>
             <span
               className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                preview.isEligibleForScan
+                preview.status === 'PENDING'
+                  ? 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                  : preview.isEligibleForScan
                   ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
-                  : 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                  : 'bg-slate-800 text-slate-400 border border-slate-700'
               }`}
             >
               {preview.status}
@@ -547,6 +550,24 @@ export default function DriverScanPage() {
               <span>•</span>
               <span>{preview.koliCount} koli</span>
             </div>
+
+            {/* Pending Extra Metadata */}
+            {preview.isPendingRescan && (
+              <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-xl space-y-1 text-amber-200 text-xs font-mono">
+                {preview.lastPendingReasonTitle && (
+                  <div className="flex justify-between">
+                    <span className="text-amber-400 font-sans font-bold">Pending Terakhir:</span>
+                    <strong className="text-white font-bold">{preview.lastPendingReasonTitle}</strong>
+                  </div>
+                )}
+                {preview.previousDriverName && (
+                  <div className="flex justify-between">
+                    <span className="text-amber-400 font-sans font-bold">Driver Sebelumnya:</span>
+                    <span className="text-white font-bold">{preview.previousDriverName}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <p className="text-[11px] font-semibold text-sky-300 pt-1">
               {preview.statusMessage}
@@ -578,11 +599,17 @@ export default function DriverScanPage() {
                 className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/30 disabled:opacity-40 flex items-center justify-center gap-2 transition"
               >
                 {assigning && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>Jadwalkan ke Saya</span>
+                <span>
+                  {preview.isPendingRescan
+                    ? preview.isAssignedToSelf
+                      ? 'Mulai Delivery Ulang'
+                      : 'Jadwalkan Delivery Ulang'
+                    : 'Jadwalkan ke Saya'}
+                </span>
               </button>
             )}
 
-            {preview.isAssignedToSelf && (
+            {!preview.isEligibleForScan && preview.isAssignedToSelf && (
               <Link
                 href={`/driver/delivery/${preview.deliveryId}`}
                 className="flex-1 py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md shadow-sky-600/20"

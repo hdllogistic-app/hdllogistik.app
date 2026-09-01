@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { PENDING_REASON_MAP } from './driver-delivery.service';
 
 export function sanitizeResiNumber(rawInput?: string | null): string {
   if (!rawInput) return '';
@@ -49,6 +50,7 @@ export async function lookupResiForScanService(
     let isAssignedToSelf = false;
     let isAssignedToOther = false;
     let otherDriverName = null;
+    let previousDriverName = activeAssignment ? activeAssignment.driver.fullName : null;
 
     if (activeAssignment) {
       if (activeAssignment.driverId === driverEmployeeId) {
@@ -60,21 +62,35 @@ export async function lookupResiForScanService(
     }
 
     let isEligibleForScan = false;
+    let isPendingRescan = false;
+    let lastPendingReasonTitle = null;
     let statusMessage = '';
 
     if (status === 'SUCCESS' || hasProof) {
       statusMessage = 'Paket ini sudah selesai tanda terima (SUCCESS).';
     } else if (status === 'CANCELLED') {
-      statusMessage = 'Paket ini sudah dibatalkan (CANCELLED).';
-    } else if (isAssignedToSelf) {
-      statusMessage = 'Paket ini sudah ada di Delivery Anda.';
-    } else if (isAssignedToOther) {
-      statusMessage = `Paket ini sudah dijadwalkan ke driver lain (${otherDriverName}).`;
+      statusMessage = 'Paket ini sudah dibatalkan/void (CANCELLED).';
     } else if (status === 'PENDING') {
-      statusMessage = 'Paket ini saat ini berstatus PENDING.';
+      isEligibleForScan = true;
+      isPendingRescan = true;
+      if (delivery.pendingReason) {
+        lastPendingReasonTitle =
+          PENDING_REASON_MAP[delivery.pendingReason] || delivery.pendingReason;
+      }
+      if (isAssignedToSelf) {
+        statusMessage = 'Paket PENDING terdeteksi. Mulai delivery ulang untuk paket ini.';
+      } else {
+        statusMessage = `Paket PENDING terdeteksi (sebelumnya: ${
+          previousDriverName || 'Driver Lain'
+        }). Jadwalkan delivery ulang ke Anda.`;
+      }
     } else if (status === 'READY') {
       isEligibleForScan = true;
       statusMessage = 'Paket siap dijadwalkan ke Anda.';
+    } else if (isAssignedToSelf) {
+      statusMessage = 'Paket ini sudah ada di Delivery Anda.';
+    } else if (isAssignedToOther) {
+      statusMessage = `Paket ini sedang dijadwalkan ke driver lain (${otherDriverName}).`;
     } else {
       statusMessage = `Status pengiriman: ${status}`;
     }
@@ -92,6 +108,9 @@ export async function lookupResiForScanService(
       koliCount: manifest.koliCount,
       status: delivery.status,
       isEligibleForScan,
+      isPendingRescan,
+      lastPendingReasonTitle,
+      previousDriverName,
       isAssignedToSelf,
       isAssignedToOther,
       otherDriverName,
@@ -142,7 +161,7 @@ export async function assignResiToDriverService(
     const delivery = manifest.delivery;
     const activeAssignment = delivery.assignments[0];
 
-    // Check SUCCESS / CANCELLED
+    // Reject SUCCESS or CANCELLED
     if (delivery.status === 'SUCCESS' || delivery.proof) {
       return {
         success: false,
@@ -158,8 +177,8 @@ export async function assignResiToDriverService(
       };
     }
 
-    // Check existing assignment
-    if (activeAssignment) {
+    // Check ordinary active assignment (non-Pending)
+    if (delivery.status !== 'PENDING' && activeAssignment) {
       if (activeAssignment.driverId === driverEmployeeId) {
         return {
           success: true,
@@ -172,41 +191,75 @@ export async function assignResiToDriverService(
       } else {
         return {
           success: false,
-          error: `Paket ini sudah dijadwalkan ke driver lain (${activeAssignment.driver.fullName}).`,
+          error: `Paket ini sedang dijadwalkan ke driver lain (${activeAssignment.driver.fullName}).`,
         };
       }
     }
 
-    // Must be READY for new assignment
-    if (delivery.status !== 'READY') {
+    // Must be READY or PENDING for scan assignment
+    if (delivery.status !== 'READY' && delivery.status !== 'PENDING') {
       return {
         success: false,
         error: `Status pengiriman saat ini (${delivery.status}) tidak dapat dijadwalkan.`,
       };
     }
 
-    // Atomic transaction for self-scan assignment
+    // Atomic transaction for self-scan / re-delivery assignment
     const now = new Date();
     const result = await prisma.$transaction(async (tx) => {
-      // Conditional update for double-scan concurrency protection
+      const currentDelivery = await tx.delivery.findUnique({
+        where: { id: delivery.id },
+        include: {
+          assignments: {
+            where: { unassignedAt: null },
+          },
+        },
+      });
+
+      if (!currentDelivery) {
+        throw new Error('Data pengiriman tidak ditemukan.');
+      }
+
+      if (currentDelivery.status === 'SUCCESS' || currentDelivery.status === 'CANCELLED') {
+        throw new Error('Paket telah selesai atau dibatalkan.');
+      }
+
+      // Close existing active assignment (if any)
+      if (currentDelivery.assignments.length > 0) {
+        await tx.deliveryAssignment.updateMany({
+          where: {
+            deliveryId: currentDelivery.id,
+            unassignedAt: null,
+          },
+          data: {
+            unassignedAt: now,
+          },
+        });
+      }
+
+      // Conditional update on Delivery (resets status to ASSIGNED, updates driverId, clears pending fields)
       const updatedDelivery = await tx.delivery.updateMany({
         where: {
-          id: delivery.id,
-          status: 'READY',
+          id: currentDelivery.id,
+          status: { in: ['READY', 'PENDING', 'ASSIGNED', 'IN_DELIVERY'] },
         },
         data: {
           status: 'ASSIGNED',
           driverId: driverEmployeeId,
+          pendingReason: null,
+          pendingNotes: null,
+          pendingAt: null,
         },
       });
 
       if (updatedDelivery.count === 0) {
-        throw new Error('Paket baru saja dijadwalkan ke driver lain.');
+        throw new Error('Paket baru saja dijadwalkan untuk pengiriman ulang oleh driver lain.');
       }
 
-      const assignment = await tx.deliveryAssignment.create({
+      // Create new DeliveryAssignment for this attempt with assignedAt = NOW
+      const newAssignment = await tx.deliveryAssignment.create({
         data: {
-          deliveryId: delivery.id,
+          deliveryId: currentDelivery.id,
           manifestId: manifest.id,
           driverId: driverEmployeeId,
           assignedById: userId,
@@ -215,18 +268,31 @@ export async function assignResiToDriverService(
         },
       });
 
+      // Log event
+      const eventNotes =
+        currentDelivery.status === 'PENDING'
+          ? currentDelivery.driverId === driverEmployeeId
+            ? 'Mulai delivery ulang (Reaktivasi Paket Pending)'
+            : 'Penugasan delivery ulang oleh Driver (Sebelumnya Pending)'
+          : 'Self-scan assignment oleh Driver';
+
       await tx.deliveryEvent.create({
         data: {
-          deliveryId: delivery.id,
+          deliveryId: currentDelivery.id,
           status: 'ASSIGNED',
-          notes: 'Self-scan assignment oleh Driver',
+          notes: eventNotes,
           actorId: userId,
           timestamp: now,
         },
       });
 
-      return assignment;
+      return newAssignment;
     });
+
+    const isPendingReactivation = delivery.status === 'PENDING';
+    const successMsg = isPendingReactivation
+      ? `✓ PAKET MASUK DELIVERY: ${manifest.resiNumber}`
+      : `✓ PAKET BERHASIL DIJADWALKAN: ${manifest.resiNumber}`;
 
     return {
       success: true,
@@ -236,7 +302,8 @@ export async function assignResiToDriverService(
       recipientName: manifest.recipientName,
       status: 'ASSIGNED',
       assignedAt: now.toISOString(),
-      message: `✓ PAKET BERHASIL DIJADWALKAN: ${manifest.resiNumber}`,
+      isPendingReactivation,
+      message: successMsg,
     };
   } catch (err: any) {
     console.error('[Assign Resi To Driver Error]', err);
