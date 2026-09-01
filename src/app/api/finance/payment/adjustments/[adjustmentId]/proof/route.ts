@@ -51,7 +51,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, url: res.url });
   } catch (error: any) {
-    console.error('GET /api/finance/payment/proof/[adjustmentId] Error:', error);
+    console.error('GET /api/finance/payment/adjustments/[adjustmentId]/proof Error:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Gagal memuat bukti transfer.' },
       { status: 500 }

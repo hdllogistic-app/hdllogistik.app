@@ -67,7 +67,7 @@ export async function POST(
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error('POST /api/finance/payment/[adjustmentId] Error:', error);
+    console.error('POST /api/finance/payment/adjustments/[adjustmentId] Error:', error);
     return NextResponse.json(
       { success: false, error: 'Gagal mengedit adjustment pembayaran.' },
       { status: 500 }

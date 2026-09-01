@@ -27,7 +27,7 @@ export async function GET(
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error('GET /api/finance/payment/[manifestId]/history Error:', error);
+    console.error('GET /api/finance/payment/manifests/[manifestId]/history Error:', error);
     return NextResponse.json(
       { success: false, error: 'Gagal memuat riwayat adjustment.' },
       { status: 500 }

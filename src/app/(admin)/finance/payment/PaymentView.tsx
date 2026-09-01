@@ -257,7 +257,7 @@ export function PaymentView() {
 
     try {
       const endpoint = isEditMode
-        ? `/api/finance/payment/${targetItem.latestAdjustmentId}`
+        ? `/api/finance/payment/adjustments/${targetItem.latestAdjustmentId}`
         : '/api/finance/payment';
 
       const res = await fetch(endpoint, {
@@ -286,7 +286,7 @@ export function PaymentView() {
     setActiveMenuResiId(null);
 
     try {
-      const res = await fetch(`/api/finance/payment/${manifestId}/history`);
+      const res = await fetch(`/api/finance/payment/manifests/${manifestId}/history`);
       const data = await res.json();
 
       if (data.success) {
@@ -305,7 +305,7 @@ export function PaymentView() {
     setLoadingProof(true);
     setViewingProofUrl(null);
     try {
-      const res = await fetch(`/api/finance/payment/proof/${adjId}`);
+      const res = await fetch(`/api/finance/payment/adjustments/${adjId}/proof`);
       const data = await res.json();
 
       if (data.success && data.url) {
