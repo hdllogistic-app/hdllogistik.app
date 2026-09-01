@@ -20,6 +20,8 @@ import {
   Clock,
   AlertTriangle,
   History,
+  Eye,
+  ImageIcon,
 } from 'lucide-react';
 import {
   formatWhatsAppUrl,
@@ -74,6 +76,14 @@ export default function DriverDeliveryDetailPage({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Proof Photo Signed URL State
+  const [proofPhotoUrl, setProofPhotoUrl] = useState<string | null>(null);
+  const [loadingProofUrl, setLoadingProofUrl] = useState<boolean>(false);
+  const [proofError, setProofError] = useState<string | null>(null);
+
+  // Proof Modal Lightbox State
+  const [isProofModalOpen, setIsProofModalOpen] = useState<boolean>(false);
+
   // TTD Modal State
   const [isTtdModalOpen, setIsTtdModalOpen] = useState<boolean>(false);
   const [actualRecipientName, setActualRecipientName] = useState<string>('');
@@ -105,6 +115,11 @@ export default function DriverDeliveryDetailPage({
         if (data.delivery.recipientName) {
           setActualRecipientName(data.delivery.recipientName);
         }
+
+        // If delivery has proof or SUCCESS status, fetch presigned proof photo URL
+        if (data.delivery.proof || data.delivery.status === 'SUCCESS') {
+          fetchProofSignedUrl();
+        }
       } else {
         setError(data.error || 'Gagal memuat detail pengiriman.');
       }
@@ -112,6 +127,24 @@ export default function DriverDeliveryDetailPage({
       setError('Terjadi kesalahan koneksi saat memuat detail pengiriman.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProofSignedUrl = async () => {
+    setLoadingProofUrl(true);
+    setProofError(null);
+    try {
+      const res = await fetch(`/api/driver/deliveries/${deliveryId}/proof`);
+      const data = await res.json();
+      if (data.success && data.url) {
+        setProofPhotoUrl(data.url);
+      } else {
+        setProofError(data.error || 'Foto tanda terima tidak tersedia.');
+      }
+    } catch {
+      setProofError('Gagal memuat foto bukti.');
+    } finally {
+      setLoadingProofUrl(false);
     }
   };
 
@@ -518,7 +551,7 @@ export default function DriverDeliveryDetailPage({
         </div>
       )}
 
-      {/* SECTION 3: RIWAYAT DELIVERY */}
+      {/* SECTION 3: RIWAYAT DELIVERY (WITH PROOF PHOTO FOR SUCCESS EVENT) */}
       {delivery.events && delivery.events.length > 0 && (
         <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-3 shadow-xl">
           <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
@@ -528,36 +561,88 @@ export default function DriverDeliveryDetailPage({
             </h3>
           </div>
 
-          <div className="space-y-2 text-xs font-mono">
+          <div className="space-y-3 text-xs font-mono">
             {delivery.events.map((ev) => (
               <div
                 key={ev.id}
-                className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-start gap-2.5"
+                className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5"
               >
-                <div
-                  className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                    ev.status === 'SUCCESS'
-                      ? 'bg-emerald-400'
-                      : ev.status === 'PENDING'
-                      ? 'bg-amber-400'
-                      : 'bg-sky-400'
-                  }`}
-                />
-                <div className="space-y-0.5 flex-1">
-                  <div className="flex justify-between items-center text-[11px]">
-                    <span className="font-bold text-white">{ev.status}</span>
-                    <span className="text-slate-500">
-                      {new Date(ev.timestamp).toLocaleString('id-ID', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}{' '}
-                      WIB
-                    </span>
+                <div className="flex items-start gap-2.5">
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${
+                      ev.status === 'SUCCESS'
+                        ? 'bg-emerald-400'
+                        : ev.status === 'PENDING'
+                        ? 'bg-amber-400'
+                        : 'bg-sky-400'
+                    }`}
+                  />
+                  <div className="space-y-0.5 flex-1">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-white">{ev.status}</span>
+                      <span className="text-slate-500">
+                        {new Date(ev.timestamp).toLocaleString('id-ID', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}{' '}
+                        WIB
+                      </span>
+                    </div>
+                    {ev.notes && <p className="text-[11px] text-slate-400 leading-normal">{ev.notes}</p>}
                   </div>
-                  {ev.notes && <p className="text-[11px] text-slate-400 leading-normal">{ev.notes}</p>}
                 </div>
+
+                {/* SHOW DELIVERY PROOF PHOTO FOR SUCCESS EVENT */}
+                {ev.status === 'SUCCESS' && (
+                  <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-sans">
+                      <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                        <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>FOTO TANDA TERIMA</span>
+                      </span>
+
+                      {proofPhotoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setIsProofModalOpen(true)}
+                          className="px-2.5 py-1 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 rounded-lg text-[11px] font-bold flex items-center gap-1 transition"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Lihat Foto</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {loadingProofUrl ? (
+                      <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 text-center text-slate-500 text-[11px] flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                        <span>Memuat foto bukti...</span>
+                      </div>
+                    ) : proofPhotoUrl ? (
+                      <div
+                        onClick={() => setIsProofModalOpen(true)}
+                        className="relative w-full max-h-56 bg-black border border-slate-800 rounded-xl overflow-hidden cursor-pointer group shadow-lg"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={proofPhotoUrl}
+                          alt="Foto Bukti TTD"
+                          className="w-full max-h-56 object-cover group-hover:scale-105 transition duration-300"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white font-bold text-xs font-sans">
+                          <Eye className="w-4 h-4 text-emerald-400" />
+                          <span>Klik untuk Memperbesar</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80 text-center text-slate-500 text-[11px]">
+                        {proofError || 'Foto tanda terima tidak tersedia.'}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -600,6 +685,69 @@ export default function DriverDeliveryDetailPage({
           </div>
         )}
       </div>
+
+      {/* PROOF PHOTO LIGHTBOX MODAL */}
+      {isProofModalOpen && proofPhotoUrl && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl relative max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
+              <h3 className="text-sm font-black text-white flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 text-emerald-400" />
+                <span>FOTO TANDA TERIMA</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsProofModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Proof Metadata */}
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 font-mono text-xs text-slate-300 shrink-0">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Resi:</span>
+                <span className="font-bold text-emerald-400">{delivery.resiNumber}</span>
+              </div>
+              {delivery.proof && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Penerima Aktual:</span>
+                    <span className="font-bold text-white">{delivery.proof.actualRecipientName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Waktu TTD:</span>
+                    <span className="font-bold text-emerald-400">
+                      {new Date(delivery.proof.receivedAt).toLocaleString('id-ID')} WIB
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Large Image View */}
+            <div className="flex-1 overflow-auto bg-black border border-slate-800 rounded-xl flex items-center justify-center p-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={proofPhotoUrl}
+                alt="Foto Bukti TTD Full"
+                className="max-h-[60vh] w-auto object-contain rounded-lg"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsProofModalOpen(false)}
+                className="w-full sm:w-auto px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MOBILE SHEET / MODAL 1: PROSES TANDA TERIMA */}
       {isTtdModalOpen && (
