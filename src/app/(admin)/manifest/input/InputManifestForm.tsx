@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   User,
   MapPin,
@@ -12,6 +12,10 @@ import {
   AlertCircle,
   Loader2,
   Coins,
+  History,
+  Search,
+  Check,
+  HelpCircle,
 } from 'lucide-react';
 
 interface CustomerOption {
@@ -27,6 +31,23 @@ interface ShippingRateOption {
   province: string;
   city: string;
   ratePerKg: number;
+  active?: boolean;
+}
+
+interface SenderHistoryItem {
+  name: string;
+  phone: string;
+  address: string;
+  lastUsedAt: string;
+}
+
+interface RecipientHistoryItem {
+  name: string;
+  phone: string;
+  address: string;
+  recipientProvinceArea: string;
+  shareLocationUrl: string | null;
+  lastUsedAt: string;
 }
 
 export function InputManifestForm() {
@@ -39,6 +60,23 @@ export function InputManifestForm() {
   const [selectedProvince, setSelectedProvince] = useState<string>('');
   const [selectedCity, setSelectedCity] = useState<string>('');
   const [currentRatePerKg, setCurrentRatePerKg] = useState<number>(0);
+
+  // Sender History Autocomplete State
+  const [senderSearchQuery, setSenderSearchQuery] = useState('');
+  const [senderSuggestions, setSenderSuggestions] = useState<SenderHistoryItem[]>([]);
+  const [loadingSenderHistory, setLoadingSenderHistory] = useState(false);
+  const [showSenderDropdown, setShowSenderDropdown] = useState(false);
+  const [senderHighlightedIndex, setSenderHighlightedIndex] = useState(-1);
+  const senderDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Recipient History Autocomplete State
+  const [recipientSearchQuery, setRecipientSearchQuery] = useState('');
+  const [recipientSuggestions, setRecipientSuggestions] = useState<RecipientHistoryItem[]>([]);
+  const [loadingRecipientHistory, setLoadingRecipientHistory] = useState(false);
+  const [showRecipientDropdown, setShowRecipientDropdown] = useState(false);
+  const [recipientHighlightedIndex, setRecipientHighlightedIndex] = useState(-1);
+  const [recipientAreaNotice, setRecipientAreaNotice] = useState<string | null>(null);
+  const recipientDropdownRef = useRef<HTMLDivElement>(null);
 
   // Form Fields
   const [senderName, setSenderName] = useState('');
@@ -99,6 +137,80 @@ export function InputManifestForm() {
     fetchRates();
   }, []);
 
+  // Outside Click Listener for History Autocomplete Dropdowns
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        senderDropdownRef.current &&
+        !senderDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowSenderDropdown(false);
+      }
+      if (
+        recipientDropdownRef.current &&
+        !recipientDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowRecipientDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Fetch Sender History
+  const fetchSenderHistory = useCallback(async (query: string) => {
+    setLoadingSenderHistory(true);
+    try {
+      const res = await fetch(
+        `/api/manifests/history/contacts?type=sender&q=${encodeURIComponent(query)}`
+      );
+      const data = await res.json();
+      if (data.success && Array.isArray(data.suggestions)) {
+        setSenderSuggestions(data.suggestions);
+      }
+    } catch (err) {
+      console.error('Failed to fetch sender history:', err);
+    } finally {
+      setLoadingSenderHistory(false);
+    }
+  }, []);
+
+  // Fetch Recipient History
+  const fetchRecipientHistory = useCallback(async (query: string) => {
+    setLoadingRecipientHistory(true);
+    try {
+      const res = await fetch(
+        `/api/manifests/history/contacts?type=recipient&q=${encodeURIComponent(query)}`
+      );
+      const data = await res.json();
+      if (data.success && Array.isArray(data.suggestions)) {
+        setRecipientSuggestions(data.suggestions);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recipient history:', err);
+    } finally {
+      setLoadingRecipientHistory(false);
+    }
+  }, []);
+
+  // Debounced Sender Search
+  useEffect(() => {
+    if (!showSenderDropdown) return;
+    const timer = setTimeout(() => {
+      fetchSenderHistory(senderSearchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [senderSearchQuery, showSenderDropdown, fetchSenderHistory]);
+
+  // Debounced Recipient Search
+  useEffect(() => {
+    if (!showRecipientDropdown) return;
+    const timer = setTimeout(() => {
+      fetchRecipientHistory(recipientSearchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [recipientSearchQuery, showRecipientDropdown, fetchRecipientHistory]);
+
   // Available distinct provinces from active shipping rates
   const availableProvinces = Array.from(new Set(shippingRates.map((r) => r.province))).sort();
 
@@ -113,6 +225,7 @@ export function InputManifestForm() {
     setSelectedProvince(prov);
     setSelectedCity('');
     setCurrentRatePerKg(0);
+    setRecipientAreaNotice(null);
   };
 
   // Handle City change and update read-only rate per kg
@@ -126,6 +239,59 @@ export function InputManifestForm() {
       setCurrentRatePerKg(matched.ratePerKg);
     } else {
       setCurrentRatePerKg(0);
+    }
+    setRecipientAreaNotice(null);
+  };
+
+  // Select Sender History Item
+  const handleSelectSenderItem = (item: SenderHistoryItem) => {
+    setSenderName(item.name);
+    setSenderPhone(item.phone);
+    setSenderAddress(item.address);
+    setShowSenderDropdown(false);
+    setSenderSearchQuery('');
+  };
+
+  // Select Recipient History Item with Area Resolution (CURRENT RATE ALWAYS WINS)
+  const handleSelectRecipientItem = (item: RecipientHistoryItem) => {
+    setRecipientName(item.name);
+    setRecipientPhone(item.phone);
+    setRecipientAddress(item.address);
+    if (item.shareLocationUrl) {
+      setShareLocationUrl(item.shareLocationUrl);
+    }
+
+    setShowRecipientDropdown(false);
+    setRecipientSearchQuery('');
+    setRecipientAreaNotice(null);
+
+    // Parse historical recipientProvinceArea e.g. "SUMEDANG, JAWA BARAT"
+    const rawArea = item.recipientProvinceArea || '';
+    if (rawArea.includes(',')) {
+      const parts = rawArea.split(',');
+      const c = parts[0].trim().toUpperCase();
+      const prov = parts.slice(1).join(',').trim().toUpperCase();
+
+      // Verify against CURRENT ACTIVE ShippingRates master
+      const matched = shippingRates.find(
+        (r) => r.province === prov && r.city === c && r.active
+      );
+
+      if (matched) {
+        setSelectedProvince(prov);
+        setSelectedCity(c);
+        setCurrentRatePerKg(matched.ratePerKg); // CURRENT active ratePerKg wins!
+      } else {
+        setSelectedProvince('');
+        setSelectedCity('');
+        setCurrentRatePerKg(0);
+        setRecipientAreaNotice(`Area riwayat (${rawArea}) perlu dipilih ulang dari Database Ongkir.`);
+      }
+    } else {
+      setSelectedProvince('');
+      setSelectedCity('');
+      setCurrentRatePerKg(0);
+      setRecipientAreaNotice('Area riwayat perlu dipilih ulang dari Database Ongkir.');
     }
   };
 
@@ -144,7 +310,7 @@ export function InputManifestForm() {
     }
   };
 
-  // Live Calculations (Preview Only — Backend recalculates safely as single source of truth)
+  // Live Calculations (Preview Only)
   const numericWeight = parseFloat(weightKg) || 0;
   const numericCOD = parseFloat(codAmount) || 0;
 
@@ -178,6 +344,7 @@ export function InputManifestForm() {
     setPaymentDeliveryMethod('CASH');
     setCodAmount('0');
     setNotes('');
+    setRecipientAreaNotice(null);
   };
 
   const handleSave = async (mode: 'INPUT_ONLY' | 'INPUT_AND_PRINT') => {
@@ -261,7 +428,7 @@ export function InputManifestForm() {
 
       const data = await response.json();
 
-      // 3. HANDLE CREATION FAILURE: CLOSE BLANK WINDOW
+      // 3. HANDLE CREATION FAILURE
       if (!response.ok || !data.success) {
         if (printWindow) {
           printWindow.close();
@@ -271,7 +438,7 @@ export function InputManifestForm() {
         return;
       }
 
-      // 4. CREATION SUCCESS: REDIRECT PRINT WINDOW IF INTENDED
+      // 4. CREATION SUCCESS
       const resi = data.manifest.resiNumber;
       const manifestId = data.manifest.id;
       setLastCreatedResi(resi);
@@ -295,7 +462,7 @@ export function InputManifestForm() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-[1150px] mx-auto space-y-6">
       {/* Top Banner Success Notification */}
       {successMessage && (
         <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-800/60 flex items-center justify-between gap-4 text-emerald-300 text-sm">
@@ -350,8 +517,109 @@ export function InputManifestForm() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
+          {/* SENDER HISTORY AUTOCOMPLETE SEARCH */}
+          <div className="relative" ref={senderDropdownRef}>
+            <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5 text-sky-400" />
+              <span>Cari dari Riwayat Pengirim</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={senderSearchQuery}
+                onFocus={() => {
+                  setShowSenderDropdown(true);
+                  fetchSenderHistory(senderSearchQuery);
+                }}
+                onChange={(e) => {
+                  setSenderSearchQuery(e.target.value);
+                  setShowSenderDropdown(true);
+                }}
+                onKeyDown={(e) => {
+                  if (!showSenderDropdown) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSenderHighlightedIndex((prev) =>
+                      prev < senderSuggestions.length - 1 ? prev + 1 : 0
+                    );
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSenderHighlightedIndex((prev) =>
+                      prev > 0 ? prev - 1 : senderSuggestions.length - 1
+                    );
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault(); // Prevent form submission!
+                    if (
+                      senderHighlightedIndex >= 0 &&
+                      senderHighlightedIndex < senderSuggestions.length
+                    ) {
+                      handleSelectSenderItem(senderSuggestions[senderHighlightedIndex]);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setShowSenderDropdown(false);
+                  }
+                }}
+                placeholder="Cari nama atau nomor HP pengirim..."
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              />
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+            </div>
+
+            {/* SENDER SUGGESTION PANEL */}
+            {showSenderDropdown && (
+              <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800/60 max-h-64 overflow-y-auto animate-fadeIn">
+                {loadingSenderHistory ? (
+                  <div className="p-3 text-xs text-slate-500 flex items-center justify-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                    <span>Mencari riwayat pengirim...</span>
+                  </div>
+                ) : senderSuggestions.length === 0 ? (
+                  <div className="p-3 text-xs text-slate-500 text-center">
+                    Tidak ada riwayat pengirim yang cocok.
+                  </div>
+                ) : (
+                  <div>
+                    <div className="px-3 py-1.5 bg-slate-900/80 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      {senderSearchQuery.length >= 2 ? 'Hasil Pencarian Riwayat' : 'Riwayat Pengirim Terakhir'}
+                    </div>
+                    {senderSuggestions.map((item, idx) => (
+                      <div
+                        key={`${item.phone}-${idx}`}
+                        onClick={() => handleSelectSenderItem(item)}
+                        className={`p-3 cursor-pointer transition flex items-center justify-between text-xs ${
+                          senderHighlightedIndex === idx
+                            ? 'bg-sky-950/80 text-white'
+                            : 'hover:bg-slate-900/90 text-slate-300'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold text-white flex items-center gap-2">
+                            <span>{item.name}</span>
+                            <span className="font-mono text-[11px] text-sky-400 font-normal">
+                              ({item.phone})
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 truncate max-w-lg mt-0.5">
+                            {item.address}
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono shrink-0 ml-3">
+                          {new Date(item.lastUsedAt).toLocaleDateString('id-ID', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            <div className="sm:col-span-7">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Nama Pengirim <span className="text-red-400">*</span>
               </label>
@@ -361,11 +629,11 @@ export function InputManifestForm() {
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}
                 placeholder="Contoh: Toko Sentosa"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
 
-            <div>
+            <div className="sm:col-span-5">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Nomor HP Pengirim <span className="text-red-400">*</span>
               </label>
@@ -375,7 +643,7 @@ export function InputManifestForm() {
                 value={senderPhone}
                 onChange={(e) => setSenderPhone(e.target.value)}
                 placeholder="Contoh: 08123456789"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
           </div>
@@ -390,20 +658,138 @@ export function InputManifestForm() {
               value={senderAddress}
               onChange={(e) => setSenderAddress(e.target.value)}
               placeholder="Contoh: Jl. Industri No. 45, Bandung"
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
             />
           </div>
         </div>
 
         {/* 2. DATA PENERIMA */}
         <div className="p-6 space-y-4">
-          <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
-            <MapPin className="w-4 h-4" />
-            <span>2. Data Penerima (Recipient)</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
+              <MapPin className="w-4 h-4" />
+              <span>2. Data Penerima (Recipient)</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
+          {/* RECIPIENT HISTORY AUTOCOMPLETE SEARCH */}
+          <div className="relative" ref={recipientDropdownRef}>
+            <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5 text-sky-400" />
+              <span>Cari dari Riwayat Penerima</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={recipientSearchQuery}
+                onFocus={() => {
+                  setShowRecipientDropdown(true);
+                  fetchRecipientHistory(recipientSearchQuery);
+                }}
+                onChange={(e) => {
+                  setRecipientSearchQuery(e.target.value);
+                  setShowRecipientDropdown(true);
+                }}
+                onKeyDown={(e) => {
+                  if (!showRecipientDropdown) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setRecipientHighlightedIndex((prev) =>
+                      prev < recipientSuggestions.length - 1 ? prev + 1 : 0
+                    );
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setRecipientHighlightedIndex((prev) =>
+                      prev > 0 ? prev - 1 : recipientSuggestions.length - 1
+                    );
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault(); // Prevent form submission!
+                    if (
+                      recipientHighlightedIndex >= 0 &&
+                      recipientHighlightedIndex < recipientSuggestions.length
+                    ) {
+                      handleSelectRecipientItem(
+                        recipientSuggestions[recipientHighlightedIndex]
+                      );
+                    }
+                  } else if (e.key === 'Escape') {
+                    setShowRecipientDropdown(false);
+                  }
+                }}
+                placeholder="Cari nama atau nomor HP penerima..."
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              />
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+            </div>
+
+            {/* RECIPIENT SUGGESTION PANEL */}
+            {showRecipientDropdown && (
+              <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800/60 max-h-64 overflow-y-auto animate-fadeIn">
+                {loadingRecipientHistory ? (
+                  <div className="p-3 text-xs text-slate-500 flex items-center justify-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                    <span>Mencari riwayat penerima...</span>
+                  </div>
+                ) : recipientSuggestions.length === 0 ? (
+                  <div className="p-3 text-xs text-slate-500 text-center">
+                    Tidak ada riwayat penerima yang cocok.
+                  </div>
+                ) : (
+                  <div>
+                    <div className="px-3 py-1.5 bg-slate-900/80 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      {recipientSearchQuery.length >= 2 ? 'Hasil Pencarian Riwayat' : 'Riwayat Penerima Terakhir'}
+                    </div>
+                    {recipientSuggestions.map((item, idx) => (
+                      <div
+                        key={`${item.phone}-${idx}`}
+                        onClick={() => handleSelectRecipientItem(item)}
+                        className={`p-3 cursor-pointer transition flex items-center justify-between text-xs ${
+                          recipientHighlightedIndex === idx
+                            ? 'bg-sky-950/80 text-white'
+                            : 'hover:bg-slate-900/90 text-slate-300'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold text-white flex items-center gap-2">
+                            <span>{item.name}</span>
+                            <span className="font-mono text-[11px] text-sky-400 font-normal">
+                              ({item.phone})
+                            </span>
+                            {item.recipientProvinceArea && (
+                              <span className="px-1.5 py-0.5 bg-sky-950 text-sky-300 border border-sky-800/60 rounded text-[9px] font-bold uppercase">
+                                {item.recipientProvinceArea}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 truncate max-w-lg mt-0.5">
+                            {item.address}
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono shrink-0 ml-3">
+                          {new Date(item.lastUsedAt).toLocaleDateString('id-ID', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* RECIPIENT AREA NOTICE BANNER */}
+          {recipientAreaNotice && (
+            <div className="p-3 bg-amber-950/40 border border-amber-800/50 rounded-xl text-xs text-amber-300 flex items-center gap-2">
+              <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>{recipientAreaNotice}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            <div className="sm:col-span-7">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Nama Penerima <span className="text-red-400">*</span>
               </label>
@@ -413,11 +799,11 @@ export function InputManifestForm() {
                 value={recipientName}
                 onChange={(e) => setRecipientName(e.target.value)}
                 placeholder="Contoh: Budi Santoso"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
 
-            <div>
+            <div className="sm:col-span-5">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Nomor HP Penerima <span className="text-red-400">*</span>
               </label>
@@ -427,7 +813,7 @@ export function InputManifestForm() {
                 value={recipientPhone}
                 onChange={(e) => setRecipientPhone(e.target.value)}
                 placeholder="Contoh: 08987654321"
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
           </div>
@@ -439,12 +825,12 @@ export function InputManifestForm() {
                 Provinsi <span className="text-red-400">*</span>
               </label>
               {loadingRates ? (
-                <div className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-500 text-xs flex items-center gap-2">
+                <div className="px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-500 text-xs flex items-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
                   <span>Memuat area...</span>
                 </div>
               ) : shippingRates.length === 0 ? (
-                <div className="px-3.5 py-2.5 bg-slate-950 border border-red-800/60 rounded-xl text-red-400 text-xs font-medium">
+                <div className="px-3.5 py-2 bg-slate-950 border border-red-800/60 rounded-xl text-red-400 text-xs font-medium">
                   Database ongkir belum tersedia. Tambahkan area melalui Pengaturan → Database Ongkir.
                 </div>
               ) : (
@@ -452,7 +838,7 @@ export function InputManifestForm() {
                   required
                   value={selectedProvince}
                   onChange={handleProvinceChange}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
                 >
                   <option value="">[ Pilih Provinsi ▼ ]</option>
                   {availableProvinces.map((prov) => (
@@ -469,7 +855,7 @@ export function InputManifestForm() {
                 Kota / Kabupaten <span className="text-red-400">*</span>
               </label>
               {loadingRates ? (
-                <div className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-500 text-xs flex items-center gap-2">
+                <div className="px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-500 text-xs flex items-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
                   <span>Memuat kota...</span>
                 </div>
@@ -479,7 +865,7 @@ export function InputManifestForm() {
                   disabled={!selectedProvince || availableCities.length === 0}
                   value={selectedCity}
                   onChange={handleCityChange}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none disabled:opacity-50"
+                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none disabled:opacity-50"
                 >
                   <option value="">[ Pilih Kota / Kabupaten ▼ ]</option>
                   {availableCities.map((r) => (
@@ -502,7 +888,7 @@ export function InputManifestForm() {
               value={recipientAddress}
               onChange={(e) => setRecipientAddress(e.target.value)}
               placeholder="Contoh: Jl. Raya Tanjungsari No. 12, Sumedang"
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
             />
           </div>
 
@@ -515,7 +901,7 @@ export function InputManifestForm() {
               value={shareLocationUrl}
               onChange={(e) => setShareLocationUrl(e.target.value)}
               placeholder="Contoh: https://maps.app.goo.gl/xxx"
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
             />
           </div>
         </div>
@@ -527,22 +913,22 @@ export function InputManifestForm() {
             <span>3. Data Barang & Rincian Ongkir</span>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Nama Barang <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={itemName}
-              onChange={(e) => setItemName(e.target.value)}
-              placeholder="Contoh: Sparepart Mobil / Pakaian"
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
-            />
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            <div className="sm:col-span-6">
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Nama Barang <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={itemName}
+                onChange={(e) => setItemName(e.target.value)}
+                placeholder="Contoh: Sparepart Mobil / Pakaian"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              />
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
+            <div className="sm:col-span-3">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Berat Total (Kg) <span className="text-red-400">*</span>
               </label>
@@ -553,11 +939,11 @@ export function InputManifestForm() {
                 required
                 value={weightKg}
                 onChange={(e) => setWeightKg(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
 
-            <div>
+            <div className="sm:col-span-3">
               <label className="block text-xs font-semibold text-slate-300 mb-1">
                 Jumlah Koli <span className="text-red-400">*</span>
               </label>
@@ -567,17 +953,19 @@ export function InputManifestForm() {
                 required
                 value={koliCount}
                 onChange={(e) => setKoliCount(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:ring-2 focus:ring-sky-500 focus:outline-none"
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* READ ONLY TARIF ONGKIR / KG FROM DATABASE ONGKIR MASTER */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
                 <span>Tarif Ongkir / Kg</span>
                 <span className="text-[10px] text-emerald-400 font-mono font-normal">Database Rate</span>
               </label>
-              <div className="px-3.5 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-emerald-400 text-xs font-mono font-bold flex items-center justify-between">
+              <div className="px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-emerald-400 text-xs font-mono font-bold flex items-center justify-between">
                 <span>
                   {currentRatePerKg > 0
                     ? `Rp ${currentRatePerKg.toLocaleString('id-ID')} / Kg`
@@ -586,16 +974,21 @@ export function InputManifestForm() {
                 <Coins className="w-3.5 h-3.5 text-emerald-500/50" />
               </div>
             </div>
-          </div>
 
-          {/* TOTAL ONGKIR DISPLAY */}
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              Total Ongkos Kirim:
-            </span>
-            <span className="text-lg font-bold font-mono text-emerald-400">
-              Rp {totalShippingFeePreview.toLocaleString('id-ID')}
-            </span>
+            {/* TOTAL ONGKIR DISPLAY */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Total Ongkos Kirim (Calculated)
+              </label>
+              <div className="px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Total Shipping Fee:
+                </span>
+                <span className="text-sm font-bold font-mono text-emerald-400">
+                  Rp {totalShippingFeePreview.toLocaleString('id-ID')}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -614,7 +1007,7 @@ export function InputManifestForm() {
               <select
                 value={billingMode}
                 onChange={(e) => setBillingMode(e.target.value as 'DIRECT' | 'INVOICE')}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
               >
                 <option value="DIRECT">DIRECT (Penagihan Langsung)</option>
                 <option value="INVOICE">INVOICE (Tagihan Pelanggan)</option>
@@ -630,7 +1023,7 @@ export function InputManifestForm() {
                 onChange={(e) =>
                   setPaymentDeliveryMethod(e.target.value as 'CASH' | 'DFOD' | 'COD')
                 }
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
               >
                 <option value="CASH">CASH (Bayar Pengirim)</option>
                 <option value="DFOD">DFOD (Delivery Fee on Delivery - Ongkir Bayar Penerima)</option>
@@ -677,7 +1070,7 @@ export function InputManifestForm() {
                 value={codAmount}
                 onChange={(e) => setCodAmount(e.target.value)}
                 placeholder="Masukkan nominal tagihan barang..."
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-amber-800/60 rounded-xl text-amber-300 font-mono font-bold text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                className="w-full px-3.5 py-2 bg-slate-950 border border-amber-800/60 rounded-xl text-amber-300 font-mono font-bold text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
               <div className="text-xs text-amber-300/80 space-y-1 border-t border-amber-800/40 pt-2 font-medium">
                 <p>• Ongkir Terpisah: Rp {totalShippingFeePreview.toLocaleString('id-ID')}</p>
@@ -697,7 +1090,7 @@ export function InputManifestForm() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Contoh: Titip di pos satpam jika rumah kosong"
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+              className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
             />
           </div>
         </div>

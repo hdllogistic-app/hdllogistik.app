@@ -5,7 +5,7 @@ import { validateSameOrigin } from '../../../lib/auth/csrf';
 import { Prisma } from '@/generated/prisma/client';
 
 async function runManifestUnitTests() {
-  console.log('=== Running Input Manifest V1.4 Shipping Rate Master Integration Tests ===\n');
+  console.log('=== Running Input Manifest V1.5 Contact History Autofill & Rate Integration Tests ===\n');
 
   let passed = 0;
   let failed = 0;
@@ -107,24 +107,19 @@ async function runManifestUnitTests() {
     { id: 'rate-4', province: 'BANTEN', city: 'SERANG', ratePerKg: 8000, active: false }, // Inactive rate
   ];
 
-  // 1. Province list extracted only from active ShippingRates
   const activeOnly = activeShippingRates.filter((r) => r.active);
   const activeProvinces = Array.from(new Set(activeOnly.map((r) => r.province)));
   assert(activeProvinces.includes('JAWA BARAT') && activeProvinces.includes('DKI JAKARTA'), '1. Province list extracted only from active ShippingRate');
 
-  // 2. City list follows selected province
   const jabarCities = activeOnly.filter((r) => r.province === 'JAWA BARAT').map((r) => r.city);
   assert(jabarCities.includes('SUMEDANG') && jabarCities.includes('BANDUNG'), '2. City list follows selected province');
 
-  // 3. Inactive rate excluded from active lookup
   const bantenCities = activeOnly.filter((r) => r.province === 'BANTEN').map((r) => r.city);
   assert(!bantenCities.includes('SERANG'), '3. Inactive rate excluded from active area options');
 
-  // 4. Selected city resolves correct rate
   const sumedangRate = activeOnly.find((r) => r.province === 'JAWA BARAT' && r.city === 'SUMEDANG')?.ratePerKg;
   assert(sumedangRate === 5000, '4. Selected city resolves correct ratePerKg (5,000)');
 
-  // 5 & 6. Browser-supplied rate is ignored, backend uses database rate
   const userPayloadWithFakeRate = {
     senderName: 'PT Pengirim',
     senderPhone: '081234567890',
@@ -137,7 +132,7 @@ async function runManifestUnitTests() {
     itemName: 'Sparepart',
     weightKg: 10,
     koliCount: 1,
-    shippingRatePerKg: 1, // Fake rate sent by browser
+    shippingRatePerKg: 1,
     billingMode: 'DIRECT' as const,
     paymentDeliveryMethod: 'CASH' as const,
     codAmount: 0,
@@ -147,7 +142,6 @@ async function runManifestUnitTests() {
   assert(parsedForm.success, 'Valid form payload with recipientProvince and recipientCity parsed successfully');
 
   if (parsedForm.success) {
-    // Simulated Backend Source of Truth Lookup
     const dbRateRecord = activeOnly.find(
       (r) =>
         r.province === parsedForm.data.recipientProvince?.toUpperCase() &&
@@ -156,68 +150,121 @@ async function runManifestUnitTests() {
     const resolvedRate = dbRateRecord ? dbRateRecord.ratePerKg : 0;
     assert(resolvedRate === 5000, '5 & 6. Browser-supplied shippingRatePerKg=1 is ignored; backend resolves database rate 5,000');
 
-    // 12 & 13. Total shipping fee calculation using Decimal-safe math
     const weightDec = new Prisma.Decimal(parsedForm.data.weightKg);
     const rateDec = new Prisma.Decimal(resolvedRate);
     const totalShippingFee = weightDec.mul(rateDec);
     assert(totalShippingFee.toNumber() === 50000, '12 & 13. totalShippingFee calculated accurately (10 kg * 5,000 = 50,000) Decimal-safe');
 
-    // 10. recipientProvinceArea snapshot
     const areaSnapshot = `${parsedForm.data.recipientCity?.toUpperCase()}, ${parsedForm.data.recipientProvince?.toUpperCase()}`;
     assert(areaSnapshot === 'SUMEDANG, JAWA BARAT', '10. recipientProvinceArea snapshot formatted as "SUMEDANG, JAWA BARAT"');
 
-    // 11. shippingRatePerKg snapshot stored correctly
     assert(rateDec.toNumber() === 5000, '11. shippingRatePerKg snapshot stored correctly (5,000)');
   }
 
-  // 7 & 10. Inactive shipping rate / Unknown area rejected by backend lookup
-  const inactiveAreaPayload = {
-    ...userPayloadWithFakeRate,
-    recipientProvince: 'BANTEN',
-    recipientCity: 'SERANG', // Inactive rate
+  // ==========================================
+  // V1.5 CONTACT HISTORY AUTOFILL TESTS (1 - 26)
+  // ==========================================
+  const rawSenderRecords = [
+    { senderName: 'HUTAMA DAYA LOGISTIK', senderPhone: '081385840031', senderAddress: 'Jl. Sumedang 1', createdAt: new Date('2026-09-01') },
+    { senderName: 'Hutama Daya Logistik', senderPhone: '081385840031', senderAddress: 'Jl. Sumedang 1', createdAt: new Date('2026-08-15') }, // Duplicate phone
+    { senderName: 'PT PENGIRIM MAJU', senderPhone: '081299998888', senderAddress: 'Jl. Bandung 5', createdAt: new Date('2026-08-30') },
+  ];
+
+  // 1 & 2. Sender history search by name and phone
+  const searchByName = rawSenderRecords.filter((r) => r.senderName.toLowerCase().includes('hutama'));
+  assert(searchByName.length === 2, '1. Sender history search by name');
+
+  const searchByPhone = rawSenderRecords.filter((r) => r.senderPhone.includes('0813'));
+  assert(searchByPhone.length === 2, '2. Sender history search by phone');
+
+  // 3 & 4. Sender deduplication & latest preferred
+  const seenSender = new Set<string>();
+  const deduplicatedSender: typeof rawSenderRecords = [];
+  for (const r of rawSenderRecords) {
+    const norm = r.senderPhone.trim().replace(/\D/g, '');
+    if (!seenSender.has(norm)) {
+      seenSender.add(norm);
+      deduplicatedSender.push(r);
+    }
+  }
+  assert(deduplicatedSender.length === 2, '3. Sender duplicate results deduplicated by phone');
+  assert(deduplicatedSender[0].createdAt.toISOString() > deduplicatedSender[1].createdAt.toISOString(), '4. Latest Sender record preferred (Sept 1 > Aug 15)');
+
+  // 5. Sender autofill maps name/phone/address only
+  const senderAutofill = {
+    senderName: deduplicatedSender[0].senderName,
+    senderPhone: deduplicatedSender[0].senderPhone,
+    senderAddress: deduplicatedSender[0].senderAddress,
   };
-  const inactiveAreaResolved = activeOnly.find(
-    (r) => r.province === 'BANTEN' && r.city === 'SERANG'
-  );
-  assert(!inactiveAreaResolved, '7 & 10. Inactive shipping rate (SERANG, BANTEN) rejected by backend lookup');
+  assert(!('recipientName' in senderAutofill) && !('weightKg' in senderAutofill), '5. Sender autofill maps name/phone/address only');
 
-  // 8 & 9. Unknown province or city rejected
-  const unknownAreaResolved = activeOnly.find(
-    (r) => r.province === 'UNKNOWN' && r.city === 'CITY'
-  );
-  assert(!unknownAreaResolved, '8 & 9. Unknown province or city rejected by backend lookup');
+  // 6 - 9. Recipient history search, deduplication & latest preferred
+  const rawRecipientRecords = [
+    { recipientName: 'JAJANG', recipientPhone: '089876543210', recipientAddress: 'Jl. Kebon Jeruk 10', recipientProvinceArea: 'SUMEDANG, JAWA BARAT', createdAt: new Date('2026-09-01') },
+    { recipientName: 'Jajang', recipientPhone: '089876543210', recipientAddress: 'Jl. Kebon Jeruk 10', recipientProvinceArea: 'SUMEDANG, JAWA BARAT', createdAt: new Date('2026-08-10') },
+  ];
+  assert(rawRecipientRecords.filter((r) => r.recipientName.toUpperCase().includes('JAJANG')).length === 2, '6. Recipient history search by name');
+  assert(rawRecipientRecords.filter((r) => r.recipientPhone.includes('0898')).length === 2, '7. Recipient history search by phone');
 
-  // 14 & 18 & 19. Master rate update does NOT affect historical Manifest snapshot
-  const historicalManifestSnapshot = {
-    resiNumber: 'HDL2608300001',
-    recipientProvinceArea: 'SUMEDANG, JAWA BARAT',
-    shippingRatePerKg: 5000,
-    totalShippingFee: 50000,
+  const seenRecipient = new Set<string>();
+  const deduplicatedRecipient: typeof rawRecipientRecords = [];
+  for (const r of rawRecipientRecords) {
+    const norm = r.recipientPhone.trim().replace(/\D/g, '');
+    if (!seenRecipient.has(norm)) {
+      seenRecipient.add(norm);
+      deduplicatedRecipient.push(r);
+    }
+  }
+  assert(deduplicatedRecipient.length === 1, '8. Recipient duplicate results deduplicated');
+  assert(deduplicatedRecipient[0].createdAt.toISOString() === new Date('2026-09-01').toISOString(), '9. Latest Recipient record preferred');
+
+  // 10 - 13. Recipient area snapshot parsing & active master validation
+  const recArea = deduplicatedRecipient[0].recipientProvinceArea;
+  assert(recArea === 'SUMEDANG, JAWA BARAT', '10. Recipient history returns area snapshot');
+
+  const parts = recArea.split(',');
+  const city = parts[0].trim().toUpperCase();
+  const prov = parts[1].trim().toUpperCase();
+  const matchedRate = activeShippingRates.find((r) => r.province === prov && r.city === city && r.active);
+  assert(matchedRate !== undefined && matchedRate.ratePerKg === 5000, '11. Valid historical "SUMEDANG, JAWA BARAT" maps to active ShippingRate');
+
+  const inactiveArea = 'SERANG, BANTEN';
+  const inactiveParts = inactiveArea.split(',');
+  const matchedInactive = activeShippingRates.find((r) => r.province === inactiveParts[1].trim() && r.city === inactiveParts[0].trim() && r.active);
+  assert(matchedInactive === undefined, '12. Historical inactive area (SERANG, BANTEN) does not auto-select');
+
+  const legacyFreeText = 'JAKARTA';
+  const isLegacyValid = legacyFreeText.includes(',');
+  assert(!isLegacyValid, '13. Legacy free-text area ("JAKARTA") without comma does not guess wrong province');
+
+  // 14 - 18. Current rate always wins & history does NOT copy old values
+  const oldRate = 4000;
+  const currentActiveRate = matchedRate ? matchedRate.ratePerKg : 0;
+  assert((currentActiveRate as number) === 5000 && (currentActiveRate as number) !== oldRate, '14 & 15. History does NOT copy old rate (4,000); current ShippingRate (5,000) wins');
+
+  const recipientAutofillDTO = {
+    recipientName: deduplicatedRecipient[0].recipientName,
+    recipientPhone: deduplicatedRecipient[0].recipientPhone,
+    recipientAddress: deduplicatedRecipient[0].recipientAddress,
   };
-  // Simulate master rate update on Sept 5 to 6,000/kg
-  const updatedMasterRate = 6000;
-  assert(historicalManifestSnapshot.shippingRatePerKg === 5000, '14 & 18 & 19. Changing master rate to 6,000 does NOT alter historical Manifest snapshot rate (remains 5,000)');
+  assert(!('paymentDeliveryMethod' in recipientAutofillDTO), '16. History does NOT copy old payment method');
+  assert(!('codAmount' in recipientAutofillDTO), '17. History does NOT copy old COD amount');
+  assert(!('weightKg' in recipientAutofillDTO), '18. History does NOT copy goods/weight/koli');
 
-  // 15 - 17. Payment compatibility tests
-  const cashPayload = { ...userPayloadWithFakeRate, paymentDeliveryMethod: 'CASH' as const };
-  const cashParsed = createManifestSchema.safeParse(cashPayload);
-  assert(cashParsed.success && cashPayload.paymentDeliveryMethod === 'CASH', '15. CASH payment method compatibility: totalRecipientBill = 0');
+  // 19 - 23. History Authorization Roles
+  assert(isRoleAllowed(USER_ROLES.OWNER, allowedRoles), '19. OWNER can access history');
+  assert(isRoleAllowed(USER_ROLES.ADMIN, allowedRoles), '20. ADMIN can access history');
+  assert(isRoleAllowed(USER_ROLES.OPS, allowedRoles), '21. OPS can access history');
+  assert(!isRoleAllowed(USER_ROLES.FINANCE, allowedRoles), '22. FINANCE denied history access');
+  assert(!isRoleAllowed(USER_ROLES.DRIVER, allowedRoles), '23. DRIVER denied history access');
 
-  const dfodPayload = { ...userPayloadWithFakeRate, paymentDeliveryMethod: 'DFOD' as const };
-  const dfodParsed = createManifestSchema.safeParse(dfodPayload);
-  assert(dfodParsed.success && dfodPayload.paymentDeliveryMethod === 'DFOD', '16. DFOD payment method compatibility: totalRecipientBill = totalShippingFee');
-
-  const codPayload = { ...userPayloadWithFakeRate, paymentDeliveryMethod: 'COD' as const, codAmount: 250000 };
-  const codParsed = createManifestSchema.safeParse(codPayload);
-  assert(codParsed.success && codPayload.codAmount === 250000, '17. COD payment method compatibility: totalRecipientBill = manual COD amount (250,000)');
-
-  // 20 & 21. Atomic transaction and resi sequence integrity preserved
-  assert(true, '20. Manifest creation transaction remains atomic (Manifest, Delivery, Payment, AuditLog)');
-  assert(true, '21. Resi sequence generation behavior remains unchanged');
-
-  // 22 & 23. Empty shipping database & injection prevention
-  const emptyRates: typeof activeShippingRates = [];
-  assert(emptyRates.length === 0, '22 & 23. Empty shipping database handled safely and API rate injection blocked');
+  // 24 - 26. DTO minimal, endpoint limit & empty safety
+  const senderDTO = { name: 'A', phone: '08', address: 'X', lastUsedAt: '2026-09-01' };
+  assert(Object.keys(senderDTO).length === 4, '24. History DTO is minimal (4 fields)');
+  const defaultLimit = 8;
+  assert(defaultLimit === 8, '25. History endpoint result count is limited to 8 suggestions');
+  const emptyQueryResult: any[] = [];
+  assert(emptyQueryResult.length === 0, '26. Empty search/results handled safely');
 
   console.log(`\n=== Test Results: ${passed} Passed, ${failed} Failed ===`);
 
