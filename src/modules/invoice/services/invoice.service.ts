@@ -690,3 +690,101 @@ export async function voidInvoiceService(invoiceId: string, reason: string, user
     };
   }
 }
+
+export async function linkManifestCustomerService(
+  manifestId: string,
+  customerId: string,
+  userId: string
+) {
+  try {
+    if (!manifestId) {
+      return { success: false, error: 'ID Manifest wajib diisi.' };
+    }
+    if (!customerId) {
+      return { success: false, error: 'Pilih Customer penagihan yang valid.' };
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Re-query Manifest
+      const manifest = await tx.manifest.findUnique({
+        where: { id: manifestId },
+        include: {
+          invoiceItems: {
+            include: { invoice: { select: { status: true } } },
+          },
+        },
+      });
+
+      if (!manifest) {
+        throw new Error('Resi manifest tidak ditemukan.');
+      }
+
+      if (manifest.status === 'VOID') {
+        throw new Error('Resi berstatus VOID tidak dapat dihubungkan ke customer.');
+      }
+
+      if (manifest.billingMode !== 'INVOICE') {
+        throw new Error('Hanya resi ber-billing mode INVOICE yang dapat dihubungkan ke customer penagihan.');
+      }
+
+      const activeInvoiceItem = manifest.invoiceItems.find((ii) => ii.invoice.status !== 'CANCELLED');
+      if (activeInvoiceItem) {
+        throw new Error('Resi ini sudah masuk ke invoice aktif dan tidak dapat diubah customer-nya.');
+      }
+
+      // 2. Re-query Customer
+      const targetCustomer = await tx.customer.findUnique({
+        where: { id: customerId },
+      });
+
+      if (!targetCustomer) {
+        throw new Error('Customer penagihan tidak ditemukan.');
+      }
+
+      if (!targetCustomer.active) {
+        throw new Error(`Customer ${targetCustomer.name} dalam status NON-AKTIF.`);
+      }
+
+      const previousCustomerId = manifest.customerId;
+
+      // 3. Update ONLY Manifest.customerId (preserve historical sender fields)
+      const updatedManifest = await tx.manifest.update({
+        where: { id: manifestId },
+        data: { customerId: targetCustomer.id },
+      });
+
+      // 4. AuditLog
+      await tx.auditLog.create({
+        data: {
+          action: 'UPDATE',
+          entityType: 'MANIFEST',
+          entityId: manifestId,
+          actorId: userId,
+          metadataJson: JSON.stringify({
+            manifestId,
+            resiNumber: manifest.resiNumber,
+            previousCustomerId,
+            newCustomerId: targetCustomer.id,
+            linkedForInvoice: true,
+          }),
+        },
+      });
+
+      return { updatedManifest, targetCustomer };
+    });
+
+    return {
+      success: true,
+      manifestId: result.updatedManifest.id,
+      customerName: result.targetCustomer.name,
+      customerCode: result.targetCustomer.customerCode,
+      message: `Resi ${result.updatedManifest.resiNumber} berhasil dihubungkan ke customer ${result.targetCustomer.name} (${result.targetCustomer.customerCode}).`,
+    };
+  } catch (err: any) {
+    console.error('[Link Manifest Customer Service Error]', err);
+    return {
+      success: false,
+      error: err.message || 'Gagal menghubungkan resi ke customer penagihan.',
+    };
+  }
+}

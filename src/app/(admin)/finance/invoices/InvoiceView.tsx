@@ -23,6 +23,7 @@ import {
   Printer,
   Download,
   Share2,
+  Building2,
 } from 'lucide-react';
 
 interface UnbilledResiItem {
@@ -119,6 +120,13 @@ export function InvoiceView() {
   const [createNotes, setCreateNotes] = useState<string>('');
   const [submittingInvoice, setSubmittingInvoice] = useState<boolean>(false);
 
+  // Modal State: Tentukan Customer (Legacy Link)
+  const [customerOptions, setCustomerOptions] = useState<Array<{ id: string; customerCode: string; name: string }>>([]);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState<boolean>(false);
+  const [targetLinkItem, setTargetLinkItem] = useState<UnbilledResiItem | null>(null);
+  const [selectedLinkCustomerId, setSelectedLinkCustomerId] = useState<string>('');
+  const [submittingLink, setSubmittingLink] = useState<boolean>(false);
+
   // Modal State: Catat Pembayaran Invoice
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
   const [targetPaymentInvoice, setTargetPaymentInvoice] = useState<InvoiceListItem | null>(null);
@@ -128,6 +136,22 @@ export function InvoiceView() {
   const [payRef, setPayRef] = useState<string>('');
   const [payNotes, setPayNotes] = useState<string>('');
   const [submittingPayment, setSubmittingPayment] = useState<boolean>(false);
+
+  // Fetch active customers for dropdown
+  useEffect(() => {
+    async function fetchActiveCustomers() {
+      try {
+        const res = await fetch('/api/manifests/customers');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.customers)) {
+          setCustomerOptions(data.customers);
+        }
+      } catch (err) {
+        console.error('Failed to load active customers:', err);
+      }
+    }
+    fetchActiveCustomers();
+  }, []);
 
   // Fetch Unbilled Resi
   const fetchUnbilledResi = useCallback(async () => {
@@ -244,6 +268,40 @@ export function InvoiceView() {
     setCreateDiscount('0');
     setCreateNotes('');
     setIsCreateModalOpen(true);
+  };
+
+  const handleOpenLinkModal = (item: UnbilledResiItem) => {
+    setTargetLinkItem(item);
+    setSelectedLinkCustomerId(customerOptions[0]?.id || '');
+    setIsLinkModalOpen(true);
+  };
+
+  const handleSaveLinkCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetLinkItem || !selectedLinkCustomerId) return;
+
+    setSubmittingLink(true);
+    setErrorMessage(null);
+
+    try {
+      const res = await fetch(`/api/finance/invoices/manifests/${targetLinkItem.manifestId}/customer`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: selectedLinkCustomerId }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setIsLinkModalOpen(false);
+        fetchUnbilledResi();
+      } else {
+        setErrorMessage(data.error || 'Gagal menghubungkan resi ke customer.');
+      }
+    } catch {
+      setErrorMessage('Terjadi kesalahan koneksi saat menghubungkan customer.');
+    } finally {
+      setSubmittingLink(false);
+    }
   };
 
   const handleCreateInvoice = async (e: React.FormEvent) => {
@@ -555,9 +613,13 @@ export function InvoiceView() {
 
                           <td className="p-4">
                             <div className="font-bold text-white">{item.customerName}</div>
-                            {item.customerCode && (
+                            {item.customerId ? (
                               <div className="text-[10px] text-sky-400 font-mono">
-                                ({item.customerCode})
+                                Kode: {item.customerCode}
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-amber-400 font-mono italic">
+                                CUSTOMER BELUM DITENTUKAN
                               </div>
                             )}
                           </td>
@@ -575,10 +637,24 @@ export function InvoiceView() {
                             Rp {item.totalShippingFee.toLocaleString('id-ID')}
                           </td>
 
-                          <td className="p-4 text-center whitespace-nowrap">
-                            <span className="px-2 py-0.5 bg-amber-950 text-amber-300 border border-amber-800/60 rounded text-[10px] font-bold">
-                              UNBILLED
-                            </span>
+                          <td className="p-4 text-center whitespace-nowrap space-x-1.5">
+                            {item.customerId ? (
+                              <span className="px-2 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800/60 rounded text-[10px] font-bold">
+                                TERHUBUNG
+                              </span>
+                            ) : (
+                              <>
+                                <span className="px-2 py-0.5 bg-amber-950 text-amber-300 border border-amber-800/60 rounded text-[10px] font-bold">
+                                  BELUM TERHUBUNG
+                                </span>
+                                <button
+                                  onClick={() => handleOpenLinkModal(item)}
+                                  className="px-2 py-0.5 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800/60 rounded text-[10px] font-bold transition inline-block"
+                                >
+                                  Tentukan Customer
+                                </button>
+                              </>
+                            )}
                           </td>
                         </tr>
                       );
@@ -1040,6 +1116,73 @@ export function InvoiceView() {
                 >
                   {submittingPayment && <Loader2 className="w-4 h-4 animate-spin text-white" />}
                   <span>Simpan Pembayaran</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Tentukan Customer (Legacy Link) */}
+      {isLinkModalOpen && targetLinkItem && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-sky-400" />
+                <span>TENTUKAN CUSTOMER PENAGIHAN</span>
+              </h3>
+              <button onClick={() => setIsLinkModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 text-xs text-slate-300 font-mono">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Nomor Resi:</span>
+                <span className="font-bold text-sky-400">{targetLinkItem.resiNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Pengirim (History):</span>
+                <span className="font-bold text-white">{targetLinkItem.senderName}</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveLinkCustomer} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">
+                  Customer Penagihan *
+                </label>
+                <select
+                  required
+                  value={selectedLinkCustomerId}
+                  onChange={(e) => setSelectedLinkCustomerId(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold"
+                >
+                  <option value="">-- Pilih Customer Penagihan --</option>
+                  {customerOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.customerCode} — {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLinkModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingLink || !selectedLinkCustomerId}
+                  className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl shadow-lg shadow-sky-600/20 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {submittingLink && <Loader2 className="w-4 h-4 animate-spin text-white" />}
+                  <span>Simpan Customer</span>
                 </button>
               </div>
             </form>

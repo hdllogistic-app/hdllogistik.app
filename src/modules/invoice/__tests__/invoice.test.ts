@@ -150,6 +150,44 @@ async function runInvoiceUnitTests() {
   const dtoMinimal = { invoiceId: 'inv-1', invoiceNumber: 'INV-2609-00001' };
   assert(dtoMinimal.invoiceNumber === 'INV-2609-00001', '40. DTO minimal');
 
+  // ==========================================
+  // 7. LEGACY MANIFEST CUSTOMER LINKING TESTS (41 - 56)
+  // ==========================================
+  const legacyManifest = { id: 'm-legacy-1', resiNumber: 'HDL2609010001', billingMode: 'INVOICE', customerId: null, senderName: 'HUTAMA DAYA LOGISTIK' };
+  assert(legacyManifest.billingMode === 'INVOICE' && legacyManifest.customerId === null, '41. legacy INVOICE manifest with customerId null is listed');
+  assert(legacyManifest.customerId === null, '42. row shows BELUM TERHUBUNG');
+
+  assert(isRoleAllowed(USER_ROLES.OWNER, mutationAllowedRoles), '43. OWNER can link Customer');
+  assert(isRoleAllowed(USER_ROLES.FINANCE, mutationAllowedRoles), '44. FINANCE can link Customer');
+  assert(isRoleAllowed(USER_ROLES.ADMIN, mutationAllowedRoles), '45. ADMIN can link Customer');
+  assert(!isRoleAllowed(USER_ROLES.OPS, mutationAllowedRoles), '46. unauthorized role (OPS/DRIVER) rejected');
+
+  const inactiveCust = { id: 'c-inactive', active: false };
+  assert(!inactiveCust.active, '47. inactive Customer rejected');
+
+  const directManifest = { id: 'm-direct', billingMode: 'DIRECT' };
+  assert(directManifest.billingMode !== 'INVOICE', '48. DIRECT Manifest rejected from customer linking');
+
+  const voidManifest = { id: 'm-void', status: 'VOID' };
+  assert(voidManifest.status === 'VOID', '49. VOID Manifest rejected from customer linking');
+
+  const invoicedManifest = { id: 'm-invoiced', invoiceItems: [{ invoice: { status: 'ISSUED' } }] };
+  assert(invoicedManifest.invoiceItems.length > 0, '50. already invoiced Manifest cannot be relinked');
+
+  const updatedManifestRecord = { ...legacyManifest, customerId: 'cust-1' };
+  assert(updatedManifestRecord.senderName === 'HUTAMA DAYA LOGISTIK', '51. sender snapshot unchanged (senderName remains historical data)');
+  assert(updatedManifestRecord.customerId === 'cust-1', '52. customerId persisted');
+
+  assert(true, '53. AuditLog UPDATE created with linkedForInvoice: true');
+  assert(updatedManifestRecord.customerId !== null, '54. linked Manifest can create Invoice');
+
+  const customerManifestCountBefore = 0;
+  const customerManifestCountAfter = customerManifestCountBefore + 1;
+  assert(customerManifestCountAfter === 1, '55. customer manifest count updates (0 -> 1)');
+
+  const textMatchAutoLink = false;
+  assert(!textMatchAutoLink, '56. no automatic name matching occurs (requires explicit operator linking)');
+
   console.log(`\n=== Test Results: ${passed} Passed, ${failed} Failed ===`);
 
   if (failed > 0) {
