@@ -38,7 +38,8 @@ interface DriverDeliveryItem {
 }
 
 interface DeliverySummary {
-  totalDeliveries: number;
+  totalPackages: number;
+  deliveryCount: number;
   successCount: number;
   pendingCount: number;
 }
@@ -56,7 +57,8 @@ function DriverDeliveryListContent() {
 
   const [deliveries, setDeliveries] = useState<DriverDeliveryItem[]>([]);
   const [summary, setSummary] = useState<DeliverySummary>({
-    totalDeliveries: 0,
+    totalPackages: 0,
+    deliveryCount: 0,
     successCount: 0,
     pendingCount: 0,
   });
@@ -79,7 +81,12 @@ function DriverDeliveryListContent() {
       if (data.success) {
         setDeliveries(data.deliveries || []);
         if (data.summary) {
-          setSummary(data.summary);
+          setSummary({
+            totalPackages: data.summary.totalPackages ?? 0,
+            deliveryCount: data.summary.deliveryCount ?? data.summary.totalDeliveries ?? 0,
+            successCount: data.summary.successCount ?? 0,
+            pendingCount: data.summary.pendingCount ?? 0,
+          });
         }
         if (data.selectedDate) {
           setSelectedDate(data.selectedDate);
@@ -154,7 +161,7 @@ function DriverDeliveryListContent() {
         </div>
       </div>
 
-      {/* FILTER TABS (Mobile friendly at 390px) */}
+      {/* FILTER TABS (Mutually Exclusive Badges) */}
       <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-950 border border-slate-800 rounded-2xl">
         <button
           type="button"
@@ -168,7 +175,7 @@ function DriverDeliveryListContent() {
           <Package className="w-3.5 h-3.5" />
           <span>Delivery</span>
           <span className="px-1.5 py-0.2 bg-black/30 rounded-md text-[10px] font-mono">
-            {summary.totalDeliveries}
+            {summary.deliveryCount}
           </span>
         </button>
 
@@ -225,12 +232,14 @@ function DriverDeliveryListContent() {
               ? 'Belum ada tanda terima berhasil.'
               : activeTab === 'pending'
               ? 'Tidak ada delivery pending.'
+              : summary.totalPackages > 0
+              ? 'Semua pengiriman pada tanggal ini sudah diproses.'
               : 'Belum ada pengiriman pada tanggal ini.'}
           </p>
           <p className="text-slate-500 text-[11px]">
-            {activeTab === 'all'
-              ? 'Gunakan pemilih tanggal di atas untuk melihat riwayat tanggal lain.'
-              : 'Pilih tab lain untuk melihat daftar pengiriman.'}
+            {activeTab === 'all' && summary.totalPackages > 0
+              ? 'Lihat tab Success TTD atau Pending untuk melihat riwayat pengiriman.'
+              : 'Gunakan pemilih tanggal di atas untuk melihat riwayat tanggal lain.'}
           </p>
         </div>
       ) : (

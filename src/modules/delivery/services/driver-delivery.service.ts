@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/prisma';
-import { getJakartaDateInfo } from '@/modules/manifest/utils/resi-generator';
 
 export const PENDING_REASON_MAP: Record<string, string> = {
   RESCHEDULE: 'Reschedule',
@@ -37,7 +36,7 @@ export function getJakartaDateBounds(dateStr?: string) {
 export async function getDriverDeliveriesService(
   driverEmployeeId: string,
   dateStr?: string,
-  filterTab: 'all' | 'success' | 'pending' = 'all'
+  filterTab: 'all' | 'delivery' | 'success' | 'pending' = 'all'
 ) {
   try {
     const { formattedDateStr, startUtc, endUtc } = getJakartaDateBounds(dateStr);
@@ -73,17 +72,25 @@ export async function getDriverDeliveriesService(
       orderBy: { assignedAt: 'desc' },
     });
 
-    let totalDeliveries = assignments.length;
+    let actionableCount = 0;
     let successCount = 0;
     let pendingCount = 0;
 
     const allMapped = assignments.map((a) => {
       const status = a.delivery.status;
-      const isSuccess = status === 'SUCCESS' || !!a.delivery.proof;
-      const isPending = status === 'PENDING' || (!isSuccess && status !== 'CANCELLED');
+      const hasProof = !!a.delivery.proof;
+
+      // MUTUALLY EXCLUSIVE CLASSIFICATION:
+      // 1. SUCCESS: status is SUCCESS or has DeliveryProof
+      // 2. PENDING: not SUCCESS and status is PENDING
+      // 3. ACTIONABLE DELIVERY: not SUCCESS, not PENDING, not CANCELLED (e.g. ASSIGNED/IN_DELIVERY)
+      const isSuccess = status === 'SUCCESS' || hasProof;
+      const isPending = !isSuccess && status === 'PENDING';
+      const isActionable = !isSuccess && !isPending && status !== 'CANCELLED';
 
       if (isSuccess) successCount++;
       else if (isPending) pendingCount++;
+      else if (isActionable) actionableCount++;
 
       let pendingReasonTitle = null;
       if (a.delivery.pendingReason) {
@@ -108,22 +115,29 @@ export async function getDriverDeliveriesService(
         pendingNotes: a.delivery.pendingNotes,
         pendingAt: a.delivery.pendingAt ? a.delivery.pendingAt.toISOString() : null,
         assignedAt: a.assignedAt.toISOString(),
-        hasProof: !!a.delivery.proof,
+        hasProof,
+        isSuccess,
+        isPending,
+        isActionable,
       };
     });
 
     let filteredItems = allMapped;
     if (filterTab === 'success') {
-      filteredItems = allMapped.filter((item) => item.status === 'SUCCESS' || item.hasProof);
+      filteredItems = allMapped.filter((item) => item.isSuccess);
     } else if (filterTab === 'pending') {
-      filteredItems = allMapped.filter((item) => item.status === 'PENDING');
+      filteredItems = allMapped.filter((item) => item.isPending);
+    } else {
+      // Default ('all' / 'delivery') tab: Contains ONLY actionable deliveries still needing action
+      filteredItems = allMapped.filter((item) => item.isActionable);
     }
 
     return {
       success: true,
       selectedDate: formattedDateStr,
       summary: {
-        totalDeliveries,
+        totalPackages: assignments.length,
+        deliveryCount: actionableCount,
         successCount,
         pendingCount,
       },

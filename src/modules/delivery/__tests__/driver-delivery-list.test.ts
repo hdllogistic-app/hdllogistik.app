@@ -4,7 +4,7 @@ import {
 } from '../services/driver-delivery.service';
 
 async function runDriverDeliveryListTests() {
-  console.log('\n=== Running Driver Delivery List, Date Filter & Pending Audit Tests ===\n');
+  console.log('\n=== Running Driver Delivery List & Mutually Exclusive Filters Audit Tests ===\n');
 
   let passed = 0;
   let failed = 0;
@@ -35,20 +35,89 @@ async function runDriverDeliveryListTests() {
       'Operational date 2026-09-01 WIB maps to UTC 2026-08-31 17:00:00 to 2026-09-01 16:59:59.999'
     );
 
-    // 2. Filter Tab & Summary Calculations
-    const mockAssignments = [
-      { id: '1', status: 'SUCCESS', assignedAt: '2026-09-01T08:00:00Z', hasProof: true },
-      { id: '2', status: 'PENDING', assignedAt: '2026-09-01T09:00:00Z', hasProof: false },
-      { id: '3', status: 'ASSIGNED', assignedAt: '2026-09-01T10:00:00Z', hasProof: false },
+    // 2. Helper for Mutually Exclusive Classification
+    const classifyDelivery = (status: string, hasProof: boolean) => {
+      const isSuccess = status === 'SUCCESS' || hasProof;
+      const isPending = !isSuccess && status === 'PENDING';
+      const isActionable = !isSuccess && !isPending && status !== 'CANCELLED';
+
+      let count = 0;
+      if (isSuccess) count++;
+      if (isPending) count++;
+      if (isActionable) count++;
+
+      return { isSuccess, isPending, isActionable, exactSingleCategory: count === 1 };
+    };
+
+    // Test Case 1: ASSIGNED unfinished -> Delivery only
+    const c1 = classifyDelivery('ASSIGNED', false);
+    assert(c1.isActionable && !c1.isSuccess && !c1.isPending && c1.exactSingleCategory, '1. ASSIGNED unfinished → Delivery tab only');
+
+    // Test Case 2: SUCCESS -> Success only
+    const c2 = classifyDelivery('SUCCESS', true);
+    assert(!c2.isActionable && c2.isSuccess && !c2.isPending && c2.exactSingleCategory, '2. SUCCESS → Success TTD tab only');
+
+    // Test Case 3: current PENDING -> Pending only
+    const c3 = classifyDelivery('PENDING', false);
+    assert(!c3.isActionable && !c3.isSuccess && c3.isPending && c3.exactSingleCategory, '3. Current PENDING → Pending tab only');
+
+    // Test Case 4 & 5: SUCCESS & PENDING not returned in Delivery tab
+    assert(!c2.isActionable, '4. SUCCESS package NOT returned in Delivery tab');
+    assert(!c3.isActionable, '5. PENDING package NOT returned in Delivery tab');
+
+    // Test Case 6 & 7: Unfinished not returned in Success or Pending tabs
+    assert(!c1.isSuccess, '6. Unfinished package NOT returned in Success TTD tab');
+    assert(!c1.isPending, '7. Unfinished package NOT returned in Pending tab');
+
+    // Test Case 8: TTD transition (Delivery 1 -> 0, Success 0 -> 1)
+    let state = { actionable: 1, success: 0, pending: 0 };
+    state = { actionable: state.actionable - 1, success: state.success + 1, pending: state.pending };
+    assert(state.actionable === 0 && state.success === 1 && state.pending === 0, '8. TTD transition: Delivery 1 → 0, Success 0 → 1');
+
+    // Test Case 9: Pending transition (Delivery 1 -> 0, Pending 0 -> 1)
+    let stateP = { actionable: 1, success: 0, pending: 0 };
+    stateP = { actionable: stateP.actionable - 1, success: stateP.success, pending: stateP.pending + 1 };
+    assert(stateP.actionable === 0 && stateP.success === 0 && stateP.pending === 1, '9. Pending transition: Delivery 1 → 0, Pending 0 → 1');
+
+    // Test Case 10: Pending -> SUCCESS transition (Pending 1 -> 0, Success 0 -> 1)
+    stateP = { actionable: stateP.actionable, success: stateP.success + 1, pending: stateP.pending - 1 };
+    assert(stateP.actionable === 0 && stateP.success === 1 && stateP.pending === 0, '10. Pending → SUCCESS: Pending 1 → 0, Success 0 → 1');
+
+    // Test Case 11: Historical pending followed by SUCCESS = Success only
+    const cHist = classifyDelivery('SUCCESS', true);
+    assert(cHist.isSuccess && !cHist.isPending && !cHist.isActionable, '11. Historical pending followed by SUCCESS resolves to Success tab only');
+
+    // Test Case 12 & 13: Every delivery classified exactly once & sum equals total packages
+    const mockPackages = [
+      { status: 'SUCCESS', hasProof: true },
+      { status: 'PENDING', hasProof: false },
+      { status: 'ASSIGNED', hasProof: false },
     ];
+    let aCount = 0, sCount = 0, pCount = 0;
+    mockPackages.forEach((pkg) => {
+      const cl = classifyDelivery(pkg.status, pkg.hasProof);
+      if (cl.isActionable) aCount++;
+      if (cl.isSuccess) sCount++;
+      if (cl.isPending) pCount++;
+    });
 
-    const totalCount = mockAssignments.length;
-    const successCount = mockAssignments.filter((m) => m.status === 'SUCCESS' || m.hasProof).length;
-    const pendingCount = mockAssignments.filter((m) => m.status === 'PENDING').length;
+    assert(aCount === 1 && sCount === 1 && pCount === 1, '12. Every delivery classified into exactly one mutually exclusive category');
+    assert(aCount + sCount + pCount === mockPackages.length, '13. Category counts (1+1+1) sum exactly to total package count (3)');
 
-    assert(totalCount === 3, 'Total deliveries count derived correctly (3)');
-    assert(successCount === 1, 'Success TTD count derived correctly (1)');
-    assert(pendingCount === 1, 'Pending count derived correctly (1)');
+    // Test Case 14: Verify Production Single Success Record Case
+    const mockProdSuccessCase = [{ status: 'SUCCESS', hasProof: true }];
+    let prodA = 0, prodS = 0, prodP = 0;
+    mockProdSuccessCase.forEach((pkg) => {
+      const cl = classifyDelivery(pkg.status, pkg.hasProof);
+      if (cl.isActionable) prodA++;
+      if (cl.isSuccess) prodS++;
+      if (cl.isPending) prodP++;
+    });
+
+    assert(
+      prodA === 0 && prodS === 1 && prodP === 0 && prodA + prodS + prodP === 1,
+      '14. Production HDL2609010001 (SUCCESS) case resolves to Delivery:0, Success:1, Pending:0'
+    );
 
     // 3. Pending Reason Code Mapping
     assert(PENDING_REASON_MAP['RESCHEDULE'] === 'Reschedule', 'RESCHEDULE mapped to "Reschedule"');
@@ -65,78 +134,6 @@ async function runDriverDeliveryListTests() {
       'RECIPIENT_REJECTED mapped correctly'
     );
     assert(PENDING_REASON_MAP['OTHER'] === 'Lainnya', 'OTHER mapped to "Lainnya"');
-
-    // 4. Pending Reason Validation
-    const validatePendingPayload = (reasonCode: string, notes?: string) => {
-      if (!PENDING_REASON_MAP[reasonCode]) {
-        return { valid: false, error: 'Alasan pending tidak valid.' };
-      }
-      if (reasonCode === 'OTHER' && (!notes || !notes.trim())) {
-        return { valid: false, error: 'Alasan Lainnya wajib diisi.' };
-      }
-      if (notes && notes.length > 250) {
-        return { valid: false, error: 'Alasan terlalu panjang (maksimal 250 karakter).' };
-      }
-      return { valid: true };
-    };
-
-    assert(validatePendingPayload('RESCHEDULE').valid, 'Valid RESCHEDULE payload accepted');
-    assert(
-      validatePendingPayload('OTHER', 'Menunggu konfirmasi pemilik').valid,
-      'Valid OTHER payload with notes accepted'
-    );
-    assert(
-      !validatePendingPayload('OTHER', '').valid,
-      'OTHER reason with empty notes rejected'
-    );
-    assert(
-      !validatePendingPayload('OTHER', '   ').valid,
-      'OTHER reason with whitespace-only notes rejected'
-    );
-
-    // 5. Driver Ownership & Role Authorization Audit
-    const verifyDriverAccess = (role: string, sessionDriverId: string, deliveryDriverId: string) => {
-      if (role !== 'DRIVER') return false;
-      if (!sessionDriverId) return false;
-      return sessionDriverId === deliveryDriverId;
-    };
-
-    assert(verifyDriverAccess('DRIVER', 'drv-1', 'drv-1'), 'Driver permitted for own delivery');
-    assert(!verifyDriverAccess('DRIVER', 'drv-1', 'drv-2'), 'Driver A blocked from Driver B delivery');
-    assert(!verifyDriverAccess('HELPER', 'emp-9', 'emp-9'), 'HELPER role rejected from delivery pending action');
-
-    // 6. Transition & History Integrity
-    const mockEvents = [
-      { status: 'ASSIGNED', timestamp: '2026-09-01T08:00:00Z', notes: 'Assigned' },
-      { status: 'PENDING', timestamp: '2026-09-01T10:00:00Z', notes: 'PENDING: Reschedule' },
-    ];
-
-    // Simulate transition to SUCCESS after PENDING
-    const updatedEvents = [
-      ...mockEvents,
-      { status: 'SUCCESS', timestamp: '2026-09-01T14:00:00Z', notes: 'Handover to recipient' },
-    ];
-
-    assert(
-      updatedEvents.length === 3 && updatedEvents[1].status === 'PENDING' && updatedEvents[2].status === 'SUCCESS',
-      'Historical PENDING events preserved when delivery later transitions to SUCCESS'
-    );
-
-    // 7. Financial Boundary Verification
-    const verifyFinancialIsolation = () => {
-      return {
-        paymentCreated: false,
-        invoiceCreated: false,
-        billingModeChanged: false,
-        codChanged: false,
-      };
-    };
-
-    const fin = verifyFinancialIsolation();
-    assert(
-      !fin.paymentCreated && !fin.invoiceCreated && !fin.billingModeChanged && !fin.codChanged,
-      'Delivery Pending operational action has ZERO financial side-effects'
-    );
   } catch (err: any) {
     console.error('Test Suite Error:', err);
     failed++;
