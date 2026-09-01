@@ -15,6 +15,8 @@ import {
   ArrowLeft,
   Lock,
   UserX,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface AccountItem {
@@ -46,12 +48,15 @@ export function AccountSettingsView() {
   const [createLoginId, setCreateLoginId] = useState<string>('');
   const [createPassword, setCreatePassword] = useState<string>('');
   const [createConfirm, setCreateConfirm] = useState<string>('');
+  const [showCreatePassword, setShowCreatePassword] = useState<boolean>(false);
+  const [showCreateConfirm, setShowCreateConfirm] = useState<boolean>(false);
   const [submittingCreate, setSubmittingCreate] = useState<boolean>(false);
 
   // Modal State: Reset Password
   const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
   const [targetResetAccount, setTargetResetAccount] = useState<AccountItem | null>(null);
   const [resetNewPassword, setResetNewPassword] = useState<string>('');
+  const [showResetPassword, setShowResetPassword] = useState<boolean>(false);
   const [submittingReset, setSubmittingReset] = useState<boolean>(false);
 
   const fetchAccounts = useCallback(async () => {
@@ -88,6 +93,8 @@ export function AccountSettingsView() {
     setCreateLoginId(`${emp.employeeCode.toLowerCase()}`);
     setCreatePassword('');
     setCreateConfirm('');
+    setShowCreatePassword(false);
+    setShowCreateConfirm(false);
     setIsCreateModalOpen(true);
   };
 
@@ -169,6 +176,7 @@ export function AccountSettingsView() {
   const handleOpenResetModal = (account: AccountItem) => {
     setTargetResetAccount(account);
     setResetNewPassword('');
+    setShowResetPassword(false);
     setIsResetModalOpen(true);
   };
 
@@ -462,28 +470,48 @@ export function AccountSettingsView() {
 
               <div>
                 <label className="block font-semibold text-slate-300 mb-1">Password Awal * (Min 12 Karakter)</label>
-                <input
-                  type="password"
-                  required
-                  minLength={12}
-                  value={createPassword}
-                  onChange={(e) => setCreatePassword(e.target.value)}
-                  placeholder="Minimal 12 karakter..."
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
-                />
+                <div className="relative">
+                  <input
+                    type={showCreatePassword ? 'text' : 'password'}
+                    required
+                    minLength={12}
+                    value={createPassword}
+                    onChange={(e) => setCreatePassword(e.target.value)}
+                    placeholder="Minimal 12 karakter..."
+                    className="w-full pl-3.5 pr-10 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCreatePassword(!showCreatePassword)}
+                    aria-label={showCreatePassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition p-1"
+                  >
+                    {showCreatePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-300 mb-1">Konfirmasi Password *</label>
-                <input
-                  type="password"
-                  required
-                  minLength={12}
-                  value={createConfirm}
-                  onChange={(e) => setCreateConfirm(e.target.value)}
-                  placeholder="Ketik ulang password..."
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
-                />
+                <div className="relative">
+                  <input
+                    type={showCreateConfirm ? 'text' : 'password'}
+                    required
+                    minLength={12}
+                    value={createConfirm}
+                    onChange={(e) => setCreateConfirm(e.target.value)}
+                    placeholder="Ketik ulang password..."
+                    className="w-full pl-3.5 pr-10 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateConfirm(!showCreateConfirm)}
+                    aria-label={showCreateConfirm ? 'Sembunyikan password' : 'Tampilkan password'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition p-1"
+                  >
+                    {showCreateConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
@@ -536,15 +564,25 @@ export function AccountSettingsView() {
             <form onSubmit={handleResetPassword} className="space-y-4 text-xs">
               <div>
                 <label className="block font-semibold text-slate-300 mb-1">Password Baru * (Min 12 Karakter)</label>
-                <input
-                  type="password"
-                  required
-                  minLength={12}
-                  value={resetNewPassword}
-                  onChange={(e) => setResetNewPassword(e.target.value)}
-                  placeholder="Masukkan password baru..."
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
-                />
+                <div className="relative">
+                  <input
+                    type={showResetPassword ? 'text' : 'password'}
+                    required
+                    minLength={12}
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    placeholder="Masukkan password baru..."
+                    className="w-full pl-3.5 pr-10 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPassword(!showResetPassword)}
+                    aria-label={showResetPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition p-1"
+                  >
+                    {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
