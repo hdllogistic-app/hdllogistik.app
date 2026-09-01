@@ -178,6 +178,18 @@ export default function DriverScanPage() {
       if (track) {
         // @ts-ignore
         const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+        // Apply continuous focusMode if supported by device camera
+        // @ts-ignore
+        if (capabilities.focusMode && Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes('continuous')) {
+          try {
+            // @ts-ignore
+            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+          } catch (e) {
+            console.log('Focus constraint ignored:', e);
+          }
+        }
+
         // @ts-ignore
         if (capabilities.torch) {
           setTorchSupported(true);
@@ -247,23 +259,49 @@ export default function DriverScanPage() {
     }
   };
 
-  // 2. Barcode Scanner Engine: Native BarcodeDetector + ZXing Fallback
+  // 2. Barcode Scanner Engine: ZXing Primary CODE128 Engine + Parallel Native Detector
   useEffect(() => {
-    let intervalId: any = null;
+    let nativeIntervalId: any = null;
 
-    if (cameraActive && !isLocked) {
-      let isNativeDetectorAvailable = false;
+    if (cameraActive && !isLocked && videoRef.current) {
+      // Primary Production Mobile Decoder: @zxing/library BrowserMultiFormatReader
+      try {
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39,
+        ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
 
-      // Primary: Native Browser BarcodeDetector API
+        const codeReader = new BrowserMultiFormatReader(hints);
+        codeReader.timeBetweenDecodingAttempts = 150;
+        zxingReaderRef.current = codeReader;
+
+        codeReader
+          .decodeFromVideoElementContinuously(videoRef.current, (result: any, err: any) => {
+            if (result && !isLocked) {
+              const text = result.getText();
+              if (text && text.trim().toUpperCase().startsWith('HDL')) {
+                handleBarcodeDetected(text.trim());
+              }
+            }
+          })
+          .catch((e: any) => {
+            console.log('ZXing continuous decode error:', e);
+          });
+      } catch (err) {
+        console.error('ZXing Engine Error:', err);
+      }
+
+      // Parallel Secondary Decoder: Native Browser BarcodeDetector (if supported)
       if ('BarcodeDetector' in window) {
         try {
           // @ts-ignore
           const detector = new window.BarcodeDetector({
             formats: ['code_128', 'code_39'],
           });
-          isNativeDetectorAvailable = true;
 
-          intervalId = setInterval(async () => {
+          nativeIntervalId = setInterval(async () => {
             if (videoRef.current && videoRef.current.readyState >= 2 && !isLocked) {
               try {
                 const barcodes = await detector.detect(videoRef.current);
@@ -279,43 +317,13 @@ export default function DriverScanPage() {
             }
           }, 200);
         } catch (e) {
-          isNativeDetectorAvailable = false;
-        }
-      }
-
-      // Secondary Fallback Engine: @zxing/library
-      if (!isNativeDetectorAvailable && videoRef.current) {
-        try {
-          const hints = new Map();
-          hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-            BarcodeFormat.CODE_128,
-            BarcodeFormat.CODE_39,
-          ]);
-          hints.set(DecodeHintType.TRY_HARDER, true);
-
-          const codeReader = new BrowserMultiFormatReader(hints);
-          zxingReaderRef.current = codeReader;
-
-          codeReader
-            .decodeFromVideoElementContinuously(videoRef.current, (result: any, err: any) => {
-              if (result && !isLocked) {
-                const text = result.getText();
-                if (text && text.trim().toUpperCase().startsWith('HDL')) {
-                  handleBarcodeDetected(text.trim());
-                }
-              }
-            })
-            .catch((e: any) => {
-              console.log('ZXing decode init error:', e);
-            });
-        } catch (err) {
-          console.error('ZXing Engine Error:', err);
+          // Ignore native detector init error
         }
       }
     }
 
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      if (nativeIntervalId) clearInterval(nativeIntervalId);
       if (zxingReaderRef.current) {
         try {
           zxingReaderRef.current.reset();
@@ -500,10 +508,10 @@ export default function DriverScanPage() {
 
           {/* TRANSPARENT SCANNER OVERLAY (z-10) */}
           <div className="absolute inset-0 z-10 bg-transparent pointer-events-none flex flex-col items-center justify-center p-4">
-            <div className="w-[92%] h-28 border-2 border-sky-400 rounded-2xl bg-sky-500/10 relative flex items-center justify-center shadow-[0_0_25px_rgba(56,189,248,0.4)]">
+            <div className="w-[92%] h-36 border-2 border-sky-400 rounded-2xl bg-sky-500/10 relative flex items-center justify-center shadow-[0_0_25px_rgba(56,189,248,0.4)]">
               <div className="w-full h-0.5 bg-sky-400 shadow-[0_0_12px_#38bdf8] animate-pulse" />
               <span className="absolute bottom-2 text-[10px] font-bold text-sky-200 tracking-wider uppercase bg-slate-950/80 px-2 py-0.5 rounded">
-                Arahkan barcode ke dalam kotak
+                Arahkan seluruh barcode ke dalam kotak
               </span>
             </div>
 

@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import { sanitizeResiNumber } from '../../delivery/services/driver-scan-assignment.service';
 
 async function runPwaMobileTests() {
-  console.log('\n=== Running PWA Foundation, Real Camera Preview & Mobile UX Audit Tests ===\n');
+  console.log('\n=== Running PWA Foundation, Real Camera Preview & CODE128 Decoder Audit Tests ===\n');
 
   let passed = 0;
   let failed = 0;
@@ -34,7 +35,19 @@ async function runPwaMobileTests() {
     assert(scanContent.includes('stopCamera()'), '10. Barcode detection triggers hard camera stop and detaches stream');
     assert(scanContent.includes('return () => {\n      stopCamera();'), '11. Route unmount cleanup stops all camera tracks cleanly');
 
-    // 2. DRIVER HOME UNIQUE DELIVERIES SUMMARY CALCULATIONS
+    // 2. CODE128 DECODER ENGINE AUDIT
+    assert(scanContent.includes('CODE_128'), '12. ZXing configured to prioritize CODE_128 barcode format');
+    assert(scanContent.includes('decodeFromVideoElementContinuously'), '13. ZXing decodes continuously from visible <video> element');
+    assert(scanContent.includes('timeBetweenDecodingAttempts = 150'), '14. ZXing timeBetweenDecodingAttempts set to fast 150ms sampling rate');
+
+    // Test Resi CODE128 Normalization Fixtures
+    const testResi1 = sanitizeResiNumber('HDL2608310001');
+    assert(testResi1 === 'HDL2608310001', '15. Reference CODE128 resi HDL2608310001 correctly validated and normalized');
+
+    const testResi2 = sanitizeResiNumber('HDL2609010001');
+    assert(testResi2 === 'HDL2609010001', '16. Reference CODE128 resi HDL2609010001 correctly validated and normalized');
+
+    // 3. DRIVER HOME UNIQUE DELIVERIES SUMMARY CALCULATIONS
     const calculateUniqueDriverHomeSummary = (assignments: Array<{ deliveryId: string; status: string; hasProof: boolean }>) => {
       const uniqueMap = new Map<string, (typeof assignments)[0]>();
       for (const a of assignments) {
@@ -67,18 +80,18 @@ async function runPwaMobileTests() {
       { deliveryId: 'del-1', status: 'ASSIGNED', hasProof: false },
     ];
     const summary1 = calculateUniqueDriverHomeSummary(duplicateAssignmentsCase);
-    assert(summary1.totalDeliveries === 1, '12. Driver Home Total Delivery deduplicates by unique Delivery.id');
+    assert(summary1.totalDeliveries === 1, '17. Driver Home Total Delivery deduplicates by unique Delivery.id');
 
-    // 3. MANUAL RESI MODAL AUDIT
-    assert(scanContent.includes('z-[100]'), '13. Manual Resi modal backdrop uses z-[100] above bottom navigation');
-    assert(scanContent.includes('env(safe-area-inset-bottom)'), '14. Manual Resi modal includes env(safe-area-inset-bottom) padding');
+    // 4. MANUAL RESI MODAL AUDIT
+    assert(scanContent.includes('z-[100]'), '18. Manual Resi modal backdrop uses z-[100] above bottom navigation');
+    assert(scanContent.includes('env(safe-area-inset-bottom)'), '19. Manual Resi modal includes env(safe-area-inset-bottom) padding');
 
-    // 4. PWA AUDIT
+    // 5. PWA AUDIT
     const manifestPath = path.join(process.cwd(), 'public/manifest.json');
-    assert(fs.existsSync(manifestPath), '15. public/manifest.json file exists');
+    assert(fs.existsSync(manifestPath), '20. public/manifest.json file exists');
 
     const swPath = path.join(process.cwd(), 'public/sw.js');
-    assert(fs.existsSync(swPath), '16. public/sw.js service worker file exists');
+    assert(fs.existsSync(swPath), '21. public/sw.js service worker file exists');
   } catch (err: any) {
     console.error('Test Suite Error:', err);
     failed++;
