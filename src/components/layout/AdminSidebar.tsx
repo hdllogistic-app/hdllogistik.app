@@ -151,7 +151,7 @@ export function AdminSidebar() {
     <aside
       className={`border-r border-slate-800 bg-slate-950/60 p-3 hidden md:flex flex-col justify-between shrink-0 transition-all duration-300 ${
         isCollapsed ? 'w-20' : 'w-64'
-      } min-h-[calc(100vh-65px)] max-h-[calc(100vh-65px)] overflow-y-auto`}
+      } h-screen max-h-screen overflow-y-auto`}
     >
       <div className="space-y-3">
         {/* Branding Header with Real HDL LOGISTIK Logo & Dedicated Collapse Button */}
