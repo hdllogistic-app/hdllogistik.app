@@ -189,8 +189,8 @@ export function AdminSidebar() {
           </button>
         </div>
 
-        {/* Navigation Items (Starts directly after header divider) */}
-        <nav className="space-y-1 text-xs pt-1">
+        {/* Navigation Items (Separated with breathing space from branding) */}
+        <nav className="space-y-1 text-xs pt-6 mt-2 border-t border-slate-800/40">
           {/* STANDALONE DASHBOARD ITEM */}
           <Link
             href="/"
