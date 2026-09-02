@@ -3,25 +3,6 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  LayoutDashboard,
-  FilePlus,
-  FileText,
-  Search,
-  Truck,
-  DollarSign,
-  CreditCard,
-  Receipt,
-  TrendingUp,
-  CalendarCheck,
-  Award,
-  Users,
-  Database,
-  UserCheck,
-  Car,
-  Settings,
-  User,
-} from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -39,15 +20,12 @@ export function AdminSidebar() {
   const pathname = usePathname();
 
   const isItemActive = (item: NavItem) => {
-    if (item.exact) {
-      return pathname === item.href;
-    }
     return pathname === item.href;
   };
 
   const navSections: NavSection[] = [
     {
-      title: 'OPERASIONAL',
+      title: 'Operasional',
       items: [
         { label: 'Dashboard', href: '/', exact: true },
         { label: 'Input Manifest', href: '/manifest/input', exact: true },
@@ -57,7 +35,7 @@ export function AdminSidebar() {
       ],
     },
     {
-      title: 'FINANCE & CASHFLOW',
+      title: 'Finance & Cashflow',
       items: [
         { label: 'Operasional Settlement', href: '/finance/operational-settlement', exact: true },
         { label: 'Payment', href: '/finance/payment', exact: true },
@@ -68,7 +46,7 @@ export function AdminSidebar() {
       ],
     },
     {
-      title: 'PENGATURAN',
+      title: 'Pengaturan',
       items: [
         { label: 'Master Customer', href: '/settings/customers', exact: true },
         { label: 'Database Ongkir', href: '/settings/shipping-rates', exact: true },
@@ -80,59 +58,43 @@ export function AdminSidebar() {
   ];
 
   return (
-    <aside className="w-64 border-r border-[#262626] bg-[#151515] p-4 hidden md:flex flex-col justify-between shrink-0 min-h-[calc(100vh-65px)]">
-      <div className="space-y-6">
-        {/* Navigation Sections */}
-        <nav className="space-y-5 text-xs">
-          {navSections.map((sec) => (
-            <div key={sec.title} className="space-y-1">
-              <div className="px-3 py-1 text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
-                {sec.title}
-              </div>
-              {sec.items.map((item) => {
-                const active = isItemActive(item);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`block px-3 py-2 rounded-lg font-medium transition flex items-center justify-between ${
-                      active
-                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold shadow-sm'
-                        : 'text-neutral-300 hover:text-white hover:bg-neutral-800/60'
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    {item.badge && (
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
-                          active
-                            ? 'bg-amber-400 text-[#151515]'
-                            : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
-                        }`}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+    <aside className="w-64 border-r border-slate-800 bg-slate-950/40 p-4 hidden md:block shrink-0">
+      <nav className="space-y-4 text-sm">
+        {navSections.map((sec) => (
+          <div key={sec.title} className="space-y-1">
+            <div className="px-3 py-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              {sec.title}
             </div>
-          ))}
-        </nav>
-      </div>
-
-      {/* Bottom User Profile Card */}
-      <div className="pt-4 border-t border-neutral-800/80">
-        <div className="p-3 bg-neutral-900/80 border border-neutral-800 rounded-xl flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold shrink-0 text-xs">
-            AD
+            {sec.items.map((item) => {
+              const active = isItemActive(item);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`block px-3 py-2 rounded-md font-medium transition flex items-center justify-between ${
+                    active
+                      ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30 font-bold'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  {item.badge && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                        active
+                          ? 'bg-sky-500/30 text-sky-300 border border-sky-400/40'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
           </div>
-          <div className="overflow-hidden">
-            <span className="text-xs font-bold text-white block truncate">Admin Operational</span>
-            <span className="text-[10px] text-neutral-400 font-mono block">HDL Admin Web</span>
-          </div>
-        </div>
-      </div>
+        ))}
+      </nav>
     </aside>
   );
 }

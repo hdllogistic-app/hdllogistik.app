@@ -148,22 +148,22 @@ export function DeliveryMonitoringView() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white border border-[#E8E7E3] p-6 rounded-2xl shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
         <div>
-          <h1 className="text-xl font-bold text-[#171717] tracking-tight flex items-center gap-2.5">
-            <Activity className="w-6 h-6 text-[#171717]" />
+          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <Activity className="w-6 h-6 text-sky-400" />
             <span>Delivery Monitoring</span>
           </h1>
-          <p className="text-xs text-neutral-500 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             Pantau progress delivery dan TTD berdasarkan team.
           </p>
         </div>
 
         {/* Date Quick Navigation Bar */}
-        <div className="flex flex-wrap items-center gap-2 bg-[#F6F5F1] p-2 rounded-xl border border-[#E8E7E3] text-xs">
+        <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs">
           <button
             onClick={() => handleOffsetDate(-1)}
-            className="px-2.5 py-1.5 bg-white hover:bg-neutral-100 text-[#171717] rounded-lg border border-[#E8E7E3] transition flex items-center gap-1 font-medium"
+            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg border border-slate-800 transition flex items-center gap-1"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
             <span>Sebelumnya</span>
@@ -171,7 +171,7 @@ export function DeliveryMonitoringView() {
 
           <button
             onClick={handleResetToToday}
-            className="px-3 py-1.5 bg-[#171717] text-white hover:bg-[#262626] rounded-lg font-bold transition"
+            className="px-3 py-1.5 bg-sky-950 text-sky-300 hover:text-white rounded-lg border border-sky-800/60 font-bold transition"
           >
             Hari Ini
           </button>
@@ -180,12 +180,12 @@ export function DeliveryMonitoringView() {
             type="date"
             value={dateStr}
             onChange={(e) => setDateStr(e.target.value)}
-            className="px-2.5 py-1 bg-white border border-[#E8E7E3] rounded-lg text-[#171717] font-mono text-xs focus:outline-none focus:ring-1 focus:ring-[#171717]"
+            className="px-2.5 py-1 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
           />
 
           <button
             onClick={() => handleOffsetDate(1)}
-            className="px-2.5 py-1.5 bg-white hover:bg-neutral-100 text-[#171717] rounded-lg border border-[#E8E7E3] transition flex items-center gap-1 font-medium"
+            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg border border-slate-800 transition flex items-center gap-1"
           >
             <span>Berikutnya</span>
             <ChevronRight className="w-3.5 h-3.5" />
@@ -196,58 +196,58 @@ export function DeliveryMonitoringView() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {/* TOTAL DELIVERY */}
-        <div className="p-4 bg-white border border-[#E8E7E3] rounded-2xl shadow-sm flex items-center gap-3">
-          <div className="p-2.5 bg-[#F6F5F1] text-[#171717] rounded-xl border border-[#E8E7E3]">
+        <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg flex items-center gap-3">
+          <div className="p-2.5 bg-sky-950/60 text-sky-400 rounded-xl border border-sky-800/40">
             <Truck className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[10px] uppercase font-semibold text-neutral-500">Total Delivery</div>
-            <div className="text-xl font-bold font-mono text-[#171717]">
+            <div className="text-[10px] uppercase font-semibold text-slate-400">Total Delivery</div>
+            <div className="text-xl font-bold font-mono text-white">
               {summary.totalDelivery.toLocaleString('id-ID')}
             </div>
           </div>
         </div>
 
         {/* TOTAL TTD */}
-        <div className="p-4 bg-white border border-[#E8E7E3] rounded-2xl shadow-sm flex items-center gap-3">
-          <div className="p-2.5 bg-[#F6F5F1] text-emerald-700 rounded-xl border border-[#E8E7E3]">
+        <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg flex items-center gap-3">
+          <div className="p-2.5 bg-emerald-950/60 text-emerald-400 rounded-xl border border-emerald-800/40">
             <CheckCircle2 className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[10px] uppercase font-semibold text-neutral-500">Total TTD</div>
-            <div className="text-xl font-bold font-mono text-emerald-700">
+            <div className="text-[10px] uppercase font-semibold text-slate-400">Total TTD</div>
+            <div className="text-xl font-bold font-mono text-emerald-400">
               {summary.totalTtd.toLocaleString('id-ID')}
             </div>
           </div>
         </div>
 
         {/* TOTAL PENDING */}
-        <div className="p-4 bg-white border border-[#E8E7E3] rounded-2xl shadow-sm flex items-center gap-3">
-          <div className="p-2.5 bg-[#F6F5F1] text-amber-700 rounded-xl border border-[#E8E7E3]">
+        <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg flex items-center gap-3">
+          <div className="p-2.5 bg-amber-950/60 text-amber-400 rounded-xl border border-amber-800/40">
             <Clock className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[10px] uppercase font-semibold text-neutral-500">Total Pending</div>
-            <div className="text-xl font-bold font-mono text-amber-700">
+            <div className="text-[10px] uppercase font-semibold text-slate-400">Total Pending</div>
+            <div className="text-xl font-bold font-mono text-amber-300">
               {summary.totalPending.toLocaleString('id-ID')}
             </div>
           </div>
         </div>
 
         {/* ACHIEVEMENT TTD */}
-        <div className="p-4 bg-white border border-[#E8E7E3] rounded-2xl shadow-sm flex items-center gap-3">
-          <div className="p-2.5 bg-[#F6F5F1] text-[#171717] rounded-xl border border-[#E8E7E3]">
+        <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg flex items-center gap-3">
+          <div className="p-2.5 bg-indigo-950/60 text-indigo-400 rounded-xl border border-indigo-800/40">
             <Award className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[10px] uppercase font-semibold text-neutral-500">Achievement TTD</div>
+            <div className="text-[10px] uppercase font-semibold text-slate-400">Achievement TTD</div>
             <div
               className={`text-xl font-bold font-mono ${
                 summary.achievement >= 95
-                  ? 'text-emerald-700'
+                  ? 'text-emerald-400'
                   : summary.achievement >= 90
-                  ? 'text-amber-700'
-                  : 'text-[#171717]'
+                  ? 'text-amber-400'
+                  : 'text-sky-400'
               }`}
             >
               {summary.achievement.toFixed(2)}%
@@ -257,16 +257,16 @@ export function DeliveryMonitoringView() {
       </div>
 
       {/* Filters Toolbar */}
-      <div className="bg-white border border-[#E8E7E3] p-4 rounded-2xl shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
-          <label className="block text-xs font-semibold text-neutral-500 mb-1 flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-neutral-700" />
+          <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5 text-sky-400" />
             <span>Filter Team / Driver</span>
           </label>
           <select
             value={selectedTeamId}
             onChange={(e) => setSelectedTeamId(e.target.value)}
-            className="w-full px-3 py-2 bg-[#FBFBFA] border border-[#E8E7E3] rounded-xl text-[#171717] text-xs font-semibold focus:ring-1 focus:ring-[#171717] focus:outline-none"
+            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
           >
             <option value="ALL">-- Semua Team Driver --</option>
             {driverTeams.map((d) => (
@@ -278,8 +278,8 @@ export function DeliveryMonitoringView() {
         </div>
 
         <div className="sm:col-span-2">
-          <label className="block text-xs font-semibold text-neutral-500 mb-1 flex items-center gap-1.5">
-            <Search className="w-3.5 h-3.5 text-neutral-700" />
+          <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+            <Search className="w-3.5 h-3.5 text-sky-400" />
             <span>Cari Team / Kode Driver</span>
           </label>
           <input
@@ -287,28 +287,28 @@ export function DeliveryMonitoringView() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Cari nama driver atau kode team..."
-            className="w-full px-3.5 py-2 bg-[#FBFBFA] border border-[#E8E7E3] rounded-xl text-[#171717] text-xs font-medium focus:ring-1 focus:ring-[#171717] focus:outline-none"
+            className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
           />
         </div>
       </div>
 
       {/* Main Monitoring Table */}
-      <div className="bg-white border border-[#E8E7E3] rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
         {loading ? (
-          <div className="p-12 flex flex-col items-center justify-center text-neutral-500 text-xs space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-[#171717]" />
+          <div className="p-12 flex flex-col items-center justify-center text-slate-400 text-xs space-y-3">
+            <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
             <span>Memuat data monitoring delivery...</span>
           </div>
         ) : teams.length === 0 ? (
-          <div className="p-12 text-center text-neutral-500 text-xs space-y-2">
-            <Package className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
-            <p className="font-semibold text-[#171717]">Belum ada data delivery pada tanggal ini.</p>
+          <div className="p-12 text-center text-slate-500 text-xs space-y-2">
+            <Package className="w-10 h-10 mx-auto text-slate-600 mb-2" />
+            <p className="font-semibold text-slate-400">Belum ada data delivery pada tanggal ini.</p>
             <p>Silakan pilih tanggal lain atau atur ulang filter pencarian.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-[#171717]">
-              <thead className="bg-[#FAFAFA] text-neutral-500 uppercase tracking-wider text-[10px] font-bold border-b border-[#E8E7E3]">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider text-[10px] font-bold border-b border-slate-800">
                 <tr>
                   <th className="p-4">Tanggal</th>
                   <th className="p-4">Nama Team</th>
@@ -319,9 +319,9 @@ export function DeliveryMonitoringView() {
                   <th className="p-4 text-center">Aksi</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#F0EEE8] font-medium">
+              <tbody className="divide-y divide-slate-800/60 font-medium">
                 {teams.map((t) => (
-                  <tr key={t.employeeId} className="hover:bg-[#F9F8F6] transition">
+                  <tr key={t.employeeId} className="hover:bg-slate-800/40 transition">
                     <td className="p-4 font-mono text-slate-400 whitespace-nowrap">
                       {new Date(`${dateStr}T00:00:00+07:00`).toLocaleDateString('id-ID', {
                         day: '2-digit',
