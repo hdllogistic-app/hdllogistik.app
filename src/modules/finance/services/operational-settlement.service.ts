@@ -60,90 +60,116 @@ export async function getOperationalExpensesService(filters: ExpenseFilters) {
       filters.endDate
     );
 
-    // If filter is explicitly KASBON, query CashAdvanceTransaction ledger
-    if (filters.category === 'KASBON') {
-      const ledger = await getCashAdvanceLedgerService(sDate, eDate, filters.search);
-      const txs = ledger.transactions || [];
+    const isKasbonOnly = filters.category === 'KASBON';
+    const isSpecificOpCategory = filters.category && filters.category !== 'ALL' && filters.category !== 'KASBON';
+    const isVoidStatusOnly = filters.status === 'VOID';
 
-      const totalAmount = txs.reduce((sum, t) => sum + (t.type === 'DISBURSEMENT' ? t.amount : 0), 0);
+    let opExpensesList: any[] = [];
+    let kasbonList: any[] = [];
 
-      return {
-        success: true,
-        startDate: sDate,
-        endDate: eDate,
-        summary: {
-          totalAmount,
-          transactionCount: txs.length,
-          topCategory: 'Kasbon Karyawan',
-          topCategoryAmount: totalAmount,
-          dailyAverage: Number(totalAmount.toFixed(2)),
-        },
-        expenses: txs.map((t) => ({
-          id: t.id,
-          date: t.date,
-          category: 'KASBON' as any,
-          amount: t.amount,
-          status: 'ACTIVE',
-          description: `${t.type === 'DISBURSEMENT' ? '[KASBON]' : '[POTONGAN]'} ${t.description}`,
-          vehiclePlate: null,
-          employeeName: `${t.employeeName} (${t.division})`,
-          createdByName: t.createdByName,
-          voidReason: null,
-          voidedAt: null,
-          createdAt: t.createdAt,
-          type: t.type,
-          repaymentSource: t.repaymentSource,
-        })),
+    // 1. Fetch Operational Expenses if needed
+    if (!isKasbonOnly) {
+      const where: Prisma.OperationalExpenseWhereInput = {
+        date: { gte: startUtc, lte: endUtc },
+        ...(isSpecificOpCategory
+          ? { category: filters.category as OperationalExpenseCategory }
+          : {}),
+        ...(filters.status && filters.status !== 'ALL'
+          ? { status: filters.status as OperationalExpenseStatus }
+          : {}),
+        ...(filters.search
+          ? {
+              description: { contains: filters.search.trim(), mode: 'insensitive' },
+            }
+          : {}),
       };
+
+      opExpensesList = await prisma.operationalExpense.findMany({
+        where,
+        include: {
+          vehicle: true,
+          employee: true,
+          createdBy: true,
+          voidedBy: true,
+        },
+        orderBy: { date: 'desc' },
+      });
     }
 
-    const where: Prisma.OperationalExpenseWhereInput = {
-      date: { gte: startUtc, lte: endUtc },
-      ...(filters.category && filters.category !== 'ALL' && filters.category !== 'KASBON'
-        ? { category: filters.category as OperationalExpenseCategory }
-        : {}),
-      ...(filters.status && filters.status !== 'ALL'
-        ? { status: filters.status as OperationalExpenseStatus }
-        : {}),
-      ...(filters.search
-        ? {
-            description: { contains: filters.search.trim(), mode: 'insensitive' },
-          }
-        : {}),
-    };
+    // 2. Fetch Cash Advance (Kasbon) Transactions if needed
+    if (!isSpecificOpCategory && !isVoidStatusOnly) {
+      const ledger = await getCashAdvanceLedgerService(sDate, eDate, filters.search);
+      kasbonList = ledger.transactions || [];
+    }
 
-    const expenses = await prisma.operationalExpense.findMany({
-      where,
-      include: {
-        vehicle: true,
-        employee: true,
-        createdBy: true,
-        voidedBy: true,
-      },
-      orderBy: { date: 'desc' },
+    // 3. Map Operational Expenses to DTO
+    const mappedOpExpenses = opExpensesList.map((e) => ({
+      id: e.id,
+      sourceType: 'OPERATIONAL_EXPENSE' as const,
+      date: e.date.toISOString().split('T')[0],
+      category: e.category as OperationalExpenseCategory | 'KASBON',
+      amount: e.amount.toNumber(),
+      status: e.status,
+      description: e.description,
+      vehiclePlate: e.vehicle ? e.vehicle.plateNumber : null,
+      employeeName: e.employee ? e.employee.fullName : null,
+      createdByName: e.createdBy.name,
+      voidReason: e.voidReason,
+      voidedAt: e.voidedAt ? e.voidedAt.toISOString() : null,
+      createdAt: e.createdAt.toISOString(),
+    }));
+
+    // 4. Map Kasbon Transactions to DTO
+    const mappedKasbon = kasbonList.map((t) => ({
+      id: t.id,
+      sourceType: 'CASH_ADVANCE' as const,
+      date: t.date,
+      category: 'KASBON' as const,
+      amount: t.amount,
+      status: 'ACTIVE' as const,
+      description: `${t.type === 'DISBURSEMENT' ? '[KASBON]' : '[POTONGAN]'} ${t.description}`,
+      vehiclePlate: null,
+      employeeName: `${t.employeeName} (${t.division})`,
+      createdByName: t.createdByName,
+      voidReason: null,
+      voidedAt: null,
+      createdAt: t.createdAt,
+      type: t.type,
+      repaymentSource: t.repaymentSource,
+    }));
+
+    // 5. Merge and Sort (date desc, createdAt desc)
+    const allExpenses = [...mappedOpExpenses, ...mappedKasbon];
+    allExpenses.sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return b.createdAt.localeCompare(a.createdAt);
     });
 
-    // Summary calculations (Active only)
-    const activeExpenses = expenses.filter((e) => e.status === 'ACTIVE');
-    const totalAmountDec = activeExpenses.reduce(
-      (sum, e) => sum.add(e.amount),
-      new Prisma.Decimal(0)
-    );
-    const transactionCount = activeExpenses.length;
+    // 6. Summary Calculations (Active Only)
+    const activeOpExpenses = mappedOpExpenses.filter((e) => e.status === 'ACTIVE');
+    const activeKasbonDisbursements = mappedKasbon.filter((k) => k.type === 'DISBURSEMENT');
+
+    const totalOpAmount = activeOpExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalKasbonAmount = activeKasbonDisbursements.reduce((sum, k) => sum + k.amount, 0);
+    const totalAmount = totalOpAmount + totalKasbonAmount;
+
+    const transactionCount = activeOpExpenses.length + activeKasbonDisbursements.length;
 
     // Category breakdown
-    const catMap = new Map<string, Prisma.Decimal>();
-    for (const e of activeExpenses) {
-      const current = catMap.get(e.category) || new Prisma.Decimal(0);
-      catMap.set(e.category, current.add(e.amount));
+    const catMap = new Map<string, number>();
+    for (const e of activeOpExpenses) {
+      catMap.set(e.category, (catMap.get(e.category) || 0) + e.amount);
+    }
+    if (totalKasbonAmount > 0) {
+      catMap.set('KASBON', (catMap.get('KASBON') || 0) + totalKasbonAmount);
     }
 
     let topCategory = '-';
     let topCategoryAmount = 0;
 
     for (const [cat, amt] of catMap.entries()) {
-      if (amt.toNumber() > topCategoryAmount) {
-        topCategoryAmount = amt.toNumber();
+      if (amt > topCategoryAmount) {
+        topCategoryAmount = amt;
         topCategory = cat;
       }
     }
@@ -151,33 +177,20 @@ export async function getOperationalExpensesService(filters: ExpenseFilters) {
     // Days count for daily average
     const diffMs = Math.max(86400000, endUtc.getTime() - startUtc.getTime());
     const daysCount = Math.max(1, Math.ceil(diffMs / 86400000));
-    const dailyAverage = totalAmountDec.toNumber() / daysCount;
+    const dailyAverage = totalAmount / daysCount;
 
     return {
       success: true,
       startDate: sDate,
       endDate: eDate,
       summary: {
-        totalAmount: totalAmountDec.toNumber(),
+        totalAmount,
         transactionCount,
         topCategory,
         topCategoryAmount,
         dailyAverage: Number(dailyAverage.toFixed(2)),
       },
-      expenses: expenses.map((e) => ({
-        id: e.id,
-        date: e.date.toISOString().split('T')[0],
-        category: e.category,
-        amount: e.amount.toNumber(),
-        status: e.status,
-        description: e.description,
-        vehiclePlate: e.vehicle ? e.vehicle.plateNumber : null,
-        employeeName: e.employee ? e.employee.fullName : null,
-        createdByName: e.createdBy.name,
-        voidReason: e.voidReason,
-        voidedAt: e.voidedAt ? e.voidedAt.toISOString() : null,
-        createdAt: e.createdAt.toISOString(),
-      })),
+      expenses: allExpenses,
     };
   } catch (err) {
     console.error('[Get Operational Expenses Error]', err);
