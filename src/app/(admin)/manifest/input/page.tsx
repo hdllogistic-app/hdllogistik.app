@@ -18,9 +18,9 @@ export default async function InputManifestPage() {
           <div className="inline-block px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-bold uppercase tracking-wider border border-blue-500/20 mb-2">
             Form Input Manifest Resi Pengiriman
           </div>
-          <h1 className="text-2xl font-bold text-slate-100">HDL LOGISTIK — Input Manifest V1</h1>
+          <h1 className="text-2xl font-bold text-slate-100">HDL LOGISTIK — Form Input Manifest</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Input data resi pengiriman baru. Format resi otomatis: HDL + YYMMDD + 4 digit harian.
+            Harap Masukan Data Dengan Benar dan Teliti
           </p>
         </div>
         <div className="text-xs text-slate-400 font-mono bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 shrink-0">

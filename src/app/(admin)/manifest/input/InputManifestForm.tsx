@@ -1113,7 +1113,7 @@ export function InputManifestForm() {
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin text-sky-400" />}
                 <FileText className="w-4 h-4" />
-                <span>Input Saja</span>
+                <span>Input Only</span>
               </button>
 
               <button
