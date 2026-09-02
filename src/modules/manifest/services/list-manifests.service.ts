@@ -1,7 +1,10 @@
 import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/lib/prisma';
+import { getTodayJakartaStr } from '../utils/date-utils';
 
 export interface ManifestListFilters {
+  startDate?: string;
+  endDate?: string;
   area?: string;
   search?: string;
   status?: string;
@@ -53,6 +56,8 @@ export interface ManifestListItemDTO {
 export interface ListManifestsResult {
   success: boolean;
   filters: {
+    startDate: string;
+    endDate: string;
     area: string;
     search: string;
     status: string;
@@ -70,11 +75,33 @@ export interface ListManifestsResult {
   error?: string;
 }
 
+
 /**
- * Builds reusable Prisma ManifestWhereInput from filters.
+ * Builds reusable Prisma ManifestWhereInput from filters with Asia/Jakarta date range bounds.
  */
 export function buildManifestWhereInput(filters: ManifestListFilters): Prisma.ManifestWhereInput {
   const where: Prisma.ManifestWhereInput = {};
+
+  // Date Range Filtering (Asia/Jakarta boundaries)
+  const today = getTodayJakartaStr();
+  const startDate = filters.startDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate)
+    ? filters.startDate
+    : (filters.endDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate) ? filters.endDate : today);
+  const endDate = filters.endDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate)
+    ? filters.endDate
+    : startDate;
+
+  if (startDate > endDate) {
+    throw new Error('Tanggal awal tidak boleh melebihi tanggal akhir.');
+  }
+
+  const startUtc = new Date(`${startDate}T00:00:00.000+07:00`);
+  const endUtc = new Date(`${endDate}T23:59:59.999+07:00`);
+
+  where.createdAt = {
+    gte: startUtc,
+    lte: endUtc,
+  };
 
   if (filters.area && filters.area !== 'ALL' && filters.area.trim() !== '') {
     where.recipientProvinceArea = filters.area.trim();
@@ -104,6 +131,14 @@ export function buildManifestWhereInput(filters: ManifestListFilters): Prisma.Ma
 export async function listManifestsService(
   filters: ManifestListFilters
 ): Promise<ListManifestsResult> {
+  const today = getTodayJakartaStr();
+  const startDate = filters.startDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate)
+    ? filters.startDate
+    : (filters.endDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate) ? filters.endDate : today);
+  const endDate = filters.endDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate)
+    ? filters.endDate
+    : startDate;
+
   try {
     const where = buildManifestWhereInput(filters);
 
@@ -213,6 +248,8 @@ export async function listManifestsService(
     return {
       success: true,
       filters: {
+        startDate,
+        endDate,
         area: filters.area || 'ALL',
         search: filters.search || '',
         status: filters.status || 'ALL',
@@ -230,9 +267,12 @@ export async function listManifestsService(
     };
   } catch (err) {
     console.error('[List Manifests Service Error]', err);
+    const message = err instanceof Error ? err.message : 'Gagal mengambil data manifest dari database.';
     return {
       success: false,
       filters: {
+        startDate,
+        endDate,
         area: filters.area || 'ALL',
         search: filters.search || '',
         status: filters.status || 'ALL',
@@ -252,7 +292,7 @@ export async function listManifestsService(
         totalRecipientBill: 0,
       },
       manifests: [],
-      error: 'Gagal mengambil data manifest dari database.',
+      error: message,
     };
   }
 }

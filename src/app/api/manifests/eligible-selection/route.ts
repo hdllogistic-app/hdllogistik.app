@@ -17,11 +17,13 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
 
+    const startDate = searchParams.get('startDate') || undefined;
+    const endDate = searchParams.get('endDate') || undefined;
     const area = searchParams.get('area') || 'ALL';
     const search = searchParams.get('search') || '';
 
     // Build base filter
-    const baseWhere = buildManifestWhereInput({ area, search });
+    const baseWhere = buildManifestWhereInput({ startDate, endDate, area, search });
 
     // Combine with strict eligibility: DeliveryStatus.READY AND no active assignment
     const eligibleWhere = {

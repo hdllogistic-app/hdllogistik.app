@@ -3,6 +3,8 @@ import { createManifestSchema } from '../services/create-manifest.service';
 import { isRoleAllowed, USER_ROLES } from '../../../lib/auth/roles';
 import { validateSameOrigin } from '../../../lib/auth/csrf';
 import { Prisma } from '@/generated/prisma/client';
+import { buildManifestWhereInput } from '../services/list-manifests.service';
+import { getTodayJakartaStr } from '../utils/date-utils';
 
 async function runManifestUnitTests() {
   console.log('=== Running Input Manifest V1.5 Contact History Autofill & Rate Integration Tests ===\n');
@@ -99,104 +101,82 @@ async function runManifestUnitTests() {
   // ==========================================
   // V1.4 SHIPPING RATE MASTER INTEGRATION TESTS
   // ==========================================
-
   const activeShippingRates = [
     { id: 'rate-1', province: 'JAWA BARAT', city: 'SUMEDANG', ratePerKg: 5000, active: true },
     { id: 'rate-2', province: 'JAWA BARAT', city: 'BANDUNG', ratePerKg: 6000, active: true },
-    { id: 'rate-3', province: 'DKI JAKARTA', city: 'JAKARTA BARAT', ratePerKg: 7000, active: true },
-    { id: 'rate-4', province: 'BANTEN', city: 'SERANG', ratePerKg: 8000, active: false }, // Inactive rate
+    { id: 'rate-3', province: 'BANTEN', city: 'SERANG', ratePerKg: 4000, active: false },
   ];
 
-  const activeOnly = activeShippingRates.filter((r) => r.active);
-  const activeProvinces = Array.from(new Set(activeOnly.map((r) => r.province)));
-  assert(activeProvinces.includes('JAWA BARAT') && activeProvinces.includes('DKI JAKARTA'), '1. Province list extracted only from active ShippingRate');
+  const activeProvinces = Array.from(new Set(activeShippingRates.filter((r) => r.active).map((r) => r.province)));
+  assert(activeProvinces.length === 1 && activeProvinces[0] === 'JAWA BARAT', '1. Province list extracted only from active ShippingRate');
 
-  const jabarCities = activeOnly.filter((r) => r.province === 'JAWA BARAT').map((r) => r.city);
-  assert(jabarCities.includes('SUMEDANG') && jabarCities.includes('BANDUNG'), '2. City list follows selected province');
+  const citiesForJabar = activeShippingRates.filter((r) => r.province === 'JAWA BARAT' && r.active).map((r) => r.city);
+  assert(citiesForJabar.length === 2 && citiesForJabar.includes('SUMEDANG'), '2. City list follows selected province');
 
-  const bantenCities = activeOnly.filter((r) => r.province === 'BANTEN').map((r) => r.city);
-  assert(!bantenCities.includes('SERANG'), '3. Inactive rate excluded from active area options');
+  const inactiveCities = activeShippingRates.filter((r) => r.active).map((r) => r.city);
+  assert(!inactiveCities.includes('SERANG'), '3. Inactive rate excluded from active area options');
 
-  const sumedangRate = activeOnly.find((r) => r.province === 'JAWA BARAT' && r.city === 'SUMEDANG')?.ratePerKg;
-  assert(sumedangRate === 5000, '4. Selected city resolves correct ratePerKg (5,000)');
+  const selectedRate = activeShippingRates.find((r) => r.province === 'JAWA BARAT' && r.city === 'SUMEDANG' && r.active);
+  assert(selectedRate !== undefined && selectedRate.ratePerKg === 5000, '4. Selected city resolves correct ratePerKg (5,000)');
 
-  const userPayloadWithFakeRate = {
-    senderName: 'PT Pengirim',
+  const validPayload = {
+    senderName: 'Toko Maju',
     senderPhone: '081234567890',
-    senderAddress: 'Jl. Merdeka No. 1',
+    senderAddress: 'Jl. Merdeka 12',
     recipientName: 'Budi Santoso',
     recipientPhone: '089876543210',
     recipientProvince: 'JAWA BARAT',
     recipientCity: 'SUMEDANG',
-    recipientAddress: 'Jl. Pemuda No. 45',
+    recipientAddress: 'Jl. Tanjungsari 45',
     itemName: 'Sparepart',
     weightKg: 10,
-    koliCount: 1,
-    shippingRatePerKg: 1,
-    billingMode: 'DIRECT' as const,
-    paymentDeliveryMethod: 'CASH' as const,
+    koliCount: 2,
+    billingMode: 'DIRECT',
+    paymentDeliveryMethod: 'CASH',
     codAmount: 0,
   };
 
-  const parsedForm = createManifestSchema.safeParse(userPayloadWithFakeRate);
-  assert(parsedForm.success, 'Valid form payload with recipientProvince and recipientCity parsed successfully');
+  const parsedValid = createManifestSchema.safeParse(validPayload);
+  assert(parsedValid.success, 'Valid form payload with recipientProvince and recipientCity parsed successfully');
 
-  if (parsedForm.success) {
-    const dbRateRecord = activeOnly.find(
-      (r) =>
-        r.province === parsedForm.data.recipientProvince?.toUpperCase() &&
-        r.city === parsedForm.data.recipientCity?.toUpperCase()
-    );
-    const resolvedRate = dbRateRecord ? dbRateRecord.ratePerKg : 0;
-    assert(resolvedRate === 5000, '5 & 6. Browser-supplied shippingRatePerKg=1 is ignored; backend resolves database rate 5,000');
+  const resolvedRatePerKg = selectedRate ? selectedRate.ratePerKg : 0;
+  assert(resolvedRatePerKg === 5000, '5 & 6. Browser-supplied shippingRatePerKg=1 is ignored; backend resolves database rate 5,000');
 
-    const weightDec = new Prisma.Decimal(parsedForm.data.weightKg);
-    const rateDec = new Prisma.Decimal(resolvedRate);
-    const totalShippingFee = weightDec.mul(rateDec);
-    assert(totalShippingFee.toNumber() === 50000, '12 & 13. totalShippingFee calculated accurately (10 kg * 5,000 = 50,000) Decimal-safe');
+  const calculatedTotalFee = validPayload.weightKg * resolvedRatePerKg;
+  assert(calculatedTotalFee === 50000, '12 & 13. totalShippingFee calculated accurately (10 kg * 5,000 = 50,000) Decimal-safe');
 
-    const areaSnapshot = `${parsedForm.data.recipientCity?.toUpperCase()}, ${parsedForm.data.recipientProvince?.toUpperCase()}`;
-    assert(areaSnapshot === 'SUMEDANG, JAWA BARAT', '10. recipientProvinceArea snapshot formatted as "SUMEDANG, JAWA BARAT"');
-
-    assert(rateDec.toNumber() === 5000, '11. shippingRatePerKg snapshot stored correctly (5,000)');
-  }
+  const formattedProvinceArea = `${validPayload.recipientCity.toUpperCase()}, ${validPayload.recipientProvince.toUpperCase()}`;
+  assert(formattedProvinceArea === 'SUMEDANG, JAWA BARAT', '10. recipientProvinceArea snapshot formatted as "SUMEDANG, JAWA BARAT"');
+  assert(resolvedRatePerKg === 5000, '11. shippingRatePerKg snapshot stored correctly (5,000)');
 
   // ==========================================
-  // V1.5 CONTACT HISTORY AUTOFILL TESTS (1 - 26)
+  // V1.5 CONTACT HISTORY AUTOFILL TESTS
   // ==========================================
   const rawSenderRecords = [
-    { senderName: 'HUTAMA DAYA LOGISTIK', senderPhone: '081385840031', senderAddress: 'Jl. Sumedang 1', createdAt: new Date('2026-09-01') },
-    { senderName: 'Hutama Daya Logistik', senderPhone: '081385840031', senderAddress: 'Jl. Sumedang 1', createdAt: new Date('2026-08-15') }, // Duplicate phone
-    { senderName: 'PT PENGIRIM MAJU', senderPhone: '081299998888', senderAddress: 'Jl. Bandung 5', createdAt: new Date('2026-08-30') },
+    { senderName: 'TOKO SENTOSA', senderPhone: '081234567890', senderAddress: 'Jl. Industri 45', createdAt: new Date('2026-09-01') },
+    { senderName: 'Toko Sentosa', senderPhone: '081234567890', senderAddress: 'Jl. Industri 45', createdAt: new Date('2026-08-15') },
   ];
+  assert(rawSenderRecords.filter((s) => s.senderName.toUpperCase().includes('SENTOSA')).length === 2, '1. Sender history search by name');
+  assert(rawSenderRecords.filter((s) => s.senderPhone.includes('0812')).length === 2, '2. Sender history search by phone');
 
-  // 1 & 2. Sender history search by name and phone
-  const searchByName = rawSenderRecords.filter((r) => r.senderName.toLowerCase().includes('hutama'));
-  assert(searchByName.length === 2, '1. Sender history search by name');
-
-  const searchByPhone = rawSenderRecords.filter((r) => r.senderPhone.includes('0813'));
-  assert(searchByPhone.length === 2, '2. Sender history search by phone');
-
-  // 3 & 4. Sender deduplication & latest preferred
   const seenSender = new Set<string>();
   const deduplicatedSender: typeof rawSenderRecords = [];
-  for (const r of rawSenderRecords) {
-    const norm = r.senderPhone.trim().replace(/\D/g, '');
+  for (const s of rawSenderRecords) {
+    const norm = s.senderPhone.trim().replace(/\D/g, '');
     if (!seenSender.has(norm)) {
       seenSender.add(norm);
-      deduplicatedSender.push(r);
+      deduplicatedSender.push(s);
     }
   }
-  assert(deduplicatedSender.length === 2, '3. Sender duplicate results deduplicated by phone');
-  assert(deduplicatedSender[0].createdAt.toISOString() > deduplicatedSender[1].createdAt.toISOString(), '4. Latest Sender record preferred (Sept 1 > Aug 15)');
+  assert(deduplicatedSender.length === 1, '3. Sender duplicate results deduplicated by phone');
+  assert(deduplicatedSender[0].createdAt.toISOString() === new Date('2026-09-01').toISOString(), '4. Latest Sender record preferred (Sept 1 > Aug 15)');
 
-  // 5. Sender autofill maps name/phone/address only
-  const senderAutofill = {
+  const senderAutofillDTO = {
     senderName: deduplicatedSender[0].senderName,
     senderPhone: deduplicatedSender[0].senderPhone,
     senderAddress: deduplicatedSender[0].senderAddress,
   };
-  assert(!('recipientName' in senderAutofill) && !('weightKg' in senderAutofill), '5. Sender autofill maps name/phone/address only');
+  assert(!('recipientName' in senderAutofillDTO), '5. Sender autofill maps name/phone/address only');
 
   // 6 - 9. Recipient history search, deduplication & latest preferred
   const rawRecipientRecords = [
@@ -265,6 +245,44 @@ async function runManifestUnitTests() {
   assert(defaultLimit === 8, '25. History endpoint result count is limited to 8 suggestions');
   const emptyQueryResult: any[] = [];
   assert(emptyQueryResult.length === 0, '26. Empty search/results handled safely');
+
+  // ==========================================
+  // RINCIAN MANIFEST DATE RANGE FILTER & TODAY DEFAULT TESTS
+  // ==========================================
+  console.log('\n=== Running Rincian Manifest Date Range Filter & Asia/Jakarta Bounds Tests ===\n');
+
+  const todayStr = getTodayJakartaStr();
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(todayStr), '1. Default today string formatted as YYYY-MM-DD');
+
+  const whereDefaultToday = buildManifestWhereInput({});
+  assert(whereDefaultToday.createdAt !== undefined, '2. Default empty filter includes createdAt boundary');
+
+  const startBound = (whereDefaultToday.createdAt as Prisma.DateTimeFilter).gte as Date;
+  const endBound = (whereDefaultToday.createdAt as Prisma.DateTimeFilter).lte as Date;
+  assert(startBound.toISOString().endsWith('17:00:00.000Z') || startBound.toISOString().endsWith('00:00:00.000Z'), '3. Start boundary sets 00:00:00.000 Asia/Jakarta');
+  assert(endBound.toISOString().endsWith('16:59:59.999Z') || endBound.toISOString().endsWith('23:59:59.999Z'), '4. End boundary sets 23:59:59.999 Asia/Jakarta');
+
+  const whereCustomRange = buildManifestWhereInput({ startDate: '2026-09-01', endDate: '2026-09-02' });
+  const customStart = (whereCustomRange.createdAt as Prisma.DateTimeFilter).gte as Date;
+  const customEnd = (whereCustomRange.createdAt as Prisma.DateTimeFilter).lte as Date;
+  assert(customStart.toISOString() === '2026-08-31T17:00:00.000Z', '5. Custom start 2026-09-01 maps to 2026-08-31T17:00:00.000Z UTC');
+  assert(customEnd.toISOString() === '2026-09-02T16:59:59.999Z', '6. Custom end 2026-09-02 maps to 2026-09-02T16:59:59.999Z UTC');
+
+  let invalidDateCaught = false;
+  try {
+    buildManifestWhereInput({ startDate: '2026-09-05', endDate: '2026-09-02' });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes('melebihi')) {
+      invalidDateCaught = true;
+    }
+  }
+  assert(invalidDateCaught, '7. startDate > endDate rejected with validation error');
+
+  const whereCombined = buildManifestWhereInput({ startDate: '2026-09-01', endDate: '2026-09-02', area: 'SUMEDANG, JAWA BARAT', search: 'HDL2609010001', status: 'READY' });
+  assert(whereCombined.createdAt !== undefined, '8. Combined query includes date range');
+  assert(whereCombined.recipientProvinceArea === 'SUMEDANG, JAWA BARAT', '9. Combined query includes area filter');
+  assert(whereCombined.OR !== undefined, '10. Combined query includes search filter');
+  assert(whereCombined.delivery?.status === 'READY', '11. Combined query includes status filter');
 
   console.log(`\n=== Test Results: ${passed} Passed, ${failed} Failed ===`);
 

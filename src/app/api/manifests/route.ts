@@ -20,6 +20,8 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
 
+    const startDate = searchParams.get('startDate') || undefined;
+    const endDate = searchParams.get('endDate') || undefined;
     const area = searchParams.get('area') || 'ALL';
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || 'ALL';
@@ -27,12 +29,21 @@ export async function GET(request: Request) {
     const limit = Number(searchParams.get('limit')) || 25;
 
     const result = await listManifestsService({
+      startDate,
+      endDate,
       area,
       search,
       status,
       page,
       limit,
     });
+
+    if (!result.success) {
+      return NextResponse.json(
+        { success: false, error: result.error || 'Gagal mengambil data manifest.' },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json(result);
   } catch (error) {

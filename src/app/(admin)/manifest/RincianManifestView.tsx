@@ -9,6 +9,7 @@ import {
   Receipt,
   Search,
   Filter,
+  Calendar,
   Truck,
   CheckSquare,
   Square,
@@ -28,6 +29,7 @@ import {
   ManifestListItemDTO,
   ManifestSummaryDTO,
 } from '@/modules/manifest/services/list-manifests.service';
+import { getTodayJakartaStr } from '@/modules/manifest/utils/date-utils';
 import { SchedulingModal } from './SchedulingModal';
 import { EditManifestModal } from './EditManifestModal';
 import { EditSchedulingModal } from './EditSchedulingModal';
@@ -37,11 +39,26 @@ interface RincianManifestViewProps {
   userRole: string;
 }
 
+function formatDateIndo(dateStr: string): string {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const [y, m, d] = dateStr.split('-');
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+    'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+  ];
+  const mIdx = parseInt(m, 10) - 1;
+  return `${d} ${months[mIdx] || m} ${y}`;
+}
+
 export function RincianManifestView({ userRole }: RincianManifestViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Filters State
+  const todayStr = getTodayJakartaStr();
+
+  // Filters State (Default Today in Asia/Jakarta)
+  const [startDate, setStartDate] = useState<string>(searchParams.get('startDate') || todayStr);
+  const [endDate, setEndDate] = useState<string>(searchParams.get('endDate') || todayStr);
   const [area, setArea] = useState<string>(searchParams.get('area') || 'ALL');
   const [search, setSearch] = useState<string>(searchParams.get('search') || '');
   const [status, setStatus] = useState<string>(searchParams.get('status') || 'ALL');
@@ -103,10 +120,26 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
 
   // Fetch Manifests Data & Summary matching filters
   const fetchData = useCallback(async () => {
+    if (startDate && endDate && startDate > endDate) {
+      setErrorMessage('Tanggal awal tidak boleh melebihi tanggal akhir.');
+      setManifests([]);
+      setSummary({
+        totalCount: 0,
+        totalWeightKg: 0,
+        totalShippingFee: 0,
+        totalRecipientBill: 0,
+      });
+      setTotalPages(1);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setErrorMessage(null);
 
     const params = new URLSearchParams();
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
     if (area && area !== 'ALL') params.set('area', area);
     if (search && search.trim() !== '') params.set('search', search.trim());
     if (status && status !== 'ALL') params.set('status', status);
@@ -130,13 +163,20 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
         setTotalPages(data.pagination?.totalPages || 1);
       } else {
         setErrorMessage(data.error || 'Gagal mengambil data manifest.');
+        setManifests([]);
+        setSummary({
+          totalCount: 0,
+          totalWeightKg: 0,
+          totalShippingFee: 0,
+          totalRecipientBill: 0,
+        });
       }
     } catch {
       setErrorMessage('Terjadi kesalahan koneksi ke server.');
     } finally {
       setLoading(false);
     }
-  }, [area, search, status, page]);
+  }, [startDate, endDate, area, search, status, page]);
 
   useEffect(() => {
     fetchData();
@@ -144,12 +184,16 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
 
   // Update URL Query Params on filter change
   const updateQueryParams = (
+    newStartDate: string,
+    newEndDate: string,
     newArea: string,
     newSearch: string,
     newStatus: string,
     newPage: number
   ) => {
     const params = new URLSearchParams();
+    if (newStartDate) params.set('startDate', newStartDate);
+    if (newEndDate) params.set('endDate', newEndDate);
     if (newArea && newArea !== 'ALL') params.set('area', newArea);
     if (newSearch && newSearch.trim() !== '') params.set('search', newSearch.trim());
     if (newStatus && newStatus !== 'ALL') params.set('status', newStatus);
@@ -158,25 +202,47 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
     router.replace(`/manifest?${params.toString()}`);
   };
 
+  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newStart = e.target.value;
+    setStartDate(newStart);
+    setPage(1);
+    updateQueryParams(newStart, endDate, area, search, status, 1);
+  };
+
+  const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newEnd = e.target.value;
+    setEndDate(newEnd);
+    setPage(1);
+    updateQueryParams(startDate, newEnd, area, search, status, 1);
+  };
+
+  const handleTodayReset = () => {
+    const t = getTodayJakartaStr();
+    setStartDate(t);
+    setEndDate(t);
+    setPage(1);
+    updateQueryParams(t, t, area, search, status, 1);
+  };
+
   const handleAreaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newArea = e.target.value;
     setArea(newArea);
     setPage(1);
-    updateQueryParams(newArea, search, status, 1);
+    updateQueryParams(startDate, endDate, newArea, search, status, 1);
   };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newSearch = e.target.value;
     setSearch(newSearch);
     setPage(1);
-    updateQueryParams(area, newSearch, status, 1);
+    updateQueryParams(startDate, endDate, area, newSearch, status, 1);
   };
 
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newStatus = e.target.value;
     setStatus(newStatus);
     setPage(1);
-    updateQueryParams(area, search, newStatus, 1);
+    updateQueryParams(startDate, endDate, area, search, newStatus, 1);
   };
 
   // Toggle Selection Mode (Starts EMPTY by default)
@@ -195,6 +261,8 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
     setLoadingSelection(true);
     try {
       const params = new URLSearchParams();
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
       if (area && area !== 'ALL') params.set('area', area);
       if (search && search.trim() !== '') params.set('search', search.trim());
       if (status && status !== 'ALL') params.set('status', status);
@@ -234,19 +302,21 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
   // Get selected manifest DTOs from available page/cache or fetch if needed
   const selectedManifestsList = manifests.filter((m) => selectedIds.has(m.id));
 
-  // Action Menu Helpers
+  // Open Edit Data Modal
   const openEditDataModal = (m: ManifestListItemDTO) => {
     setActiveMenuId(null);
     setEditingManifest(m);
     setIsEditDataModalOpen(true);
   };
 
+  // Open Edit Scheduling Modal
   const openEditSchedulingModal = (m: ManifestListItemDTO) => {
     setActiveMenuId(null);
     setEditingSchedulingManifest(m);
     setIsEditSchedulingModalOpen(true);
   };
 
+  // Open Void Modal
   const openVoidModal = (m: ManifestListItemDTO) => {
     setActiveMenuId(null);
     setVoidingManifest(m);
@@ -361,49 +431,92 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
       )}
 
       {/* Filters Toolbar */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg grid grid-cols-1 sm:grid-cols-4 gap-4">
-        {/* Area Filter */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-sky-400" />
-            <span>Filter Wilayah / Area</span>
-          </label>
-          <select
-            value={area}
-            onChange={handleAreaChange}
-            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
-          >
-            <option value="ALL">-- Semua Area --</option>
-            {availableAreas.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+          {/* Tanggal Awal */}
+          <div className="lg:col-span-3">
+            <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-sky-400" />
+              <span>Tanggal Awal</span>
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={handleStartDateChange}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            />
+          </div>
 
-        {/* Status Filter */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-sky-400" />
-            <span>Status Delivery</span>
-          </label>
-          <select
-            value={status}
-            onChange={handleStatusChange}
-            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
-          >
-            <option value="ALL">-- Semua Status --</option>
-            <option value="READY">READY (Belum Penugasan)</option>
-            <option value="ASSIGNED">ASSIGNED (Sudah Penugasan)</option>
-            <option value="IN_DELIVERY">IN_DELIVERY (Dalam Pengiriman)</option>
-            <option value="SUCCESS">SUCCESS (Terkirim)</option>
-            <option value="CANCELLED">CANCELLED / VOID</option>
-          </select>
+          {/* Tanggal Akhir */}
+          <div className="lg:col-span-3">
+            <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-sky-400" />
+              <span>Tanggal Akhir</span>
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={handleEndDateChange}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Tombol [ Hari Ini ] quick reset */}
+          <div className="lg:col-span-2">
+            <button
+              type="button"
+              onClick={handleTodayReset}
+              className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5"
+              title="Reset filter tanggal ke Hari Ini"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-sky-400" />
+              <span>Hari Ini</span>
+            </button>
+          </div>
+
+          {/* Area Filter */}
+          <div className="lg:col-span-2">
+            <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-sky-400" />
+              <span>Wilayah / Area</span>
+            </label>
+            <select
+              value={area}
+              onChange={handleAreaChange}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            >
+              <option value="ALL">-- Semua Area --</option>
+              {availableAreas.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div className="lg:col-span-2">
+            <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-sky-400" />
+              <span>Status Delivery</span>
+            </label>
+            <select
+              value={status}
+              onChange={handleStatusChange}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            >
+              <option value="ALL">-- Semua Status --</option>
+              <option value="READY">READY (Belum Penugasan)</option>
+              <option value="ASSIGNED">ASSIGNED (Sudah Penugasan)</option>
+              <option value="IN_DELIVERY">IN_DELIVERY (Dalam Pengiriman)</option>
+              <option value="SUCCESS">SUCCESS (Terkirim)</option>
+              <option value="CANCELLED">CANCELLED / VOID</option>
+            </select>
+          </div>
         </div>
 
         {/* Search Bar */}
-        <div className="sm:col-span-2">
+        <div>
           <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
             <Search className="w-3.5 h-3.5 text-sky-400" />
             <span>Cari Resi / Pengirim / Penerima</span>
@@ -433,19 +546,19 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
         </div>
 
         <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg flex items-center gap-3">
-          <div className="p-2.5 bg-indigo-950/60 text-indigo-400 rounded-xl border border-indigo-800/40">
+          <div className="p-2.5 bg-emerald-950/60 text-emerald-400 rounded-xl border border-emerald-800/40">
             <Weight className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[10px] uppercase font-semibold text-slate-400">Total Berat</div>
-            <div className="text-lg font-bold font-mono text-indigo-300">
-              {summary.totalWeightKg.toLocaleString('id-ID', { minimumFractionDigits: 2 })} Kg
+            <div className="text-[10px] uppercase font-semibold text-slate-400">Total Berat (Kg)</div>
+            <div className="text-lg font-bold font-mono text-white">
+              {summary.totalWeightKg.toLocaleString('id-ID')} Kg
             </div>
           </div>
         </div>
 
         <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-950/60 text-emerald-400 rounded-xl border border-emerald-800/40">
+          <div className="p-2.5 bg-indigo-950/60 text-indigo-400 rounded-xl border border-indigo-800/40">
             <Coins className="w-5 h-5" />
           </div>
           <div>
@@ -462,41 +575,41 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
           </div>
           <div>
             <div className="text-[10px] uppercase font-semibold text-slate-400">Total Tagihan Penerima</div>
-            <div className="text-lg font-bold font-mono text-amber-300">
+            <div className="text-lg font-bold font-mono text-amber-400">
               Rp {summary.totalRecipientBill.toLocaleString('id-ID')}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Table Section */}
+      {/* Manifest Table Card */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
         {loading ? (
-          <div className="p-12 flex flex-col items-center justify-center text-slate-400 text-xs space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
-            <span>Memuat data manifest...</span>
+          <div className="p-12 text-center text-slate-400 flex items-center justify-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-sky-400" />
+            <span className="text-xs font-semibold">Memuat data manifest...</span>
           </div>
         ) : manifests.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-xs space-y-2">
-            <Package className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-            <p className="font-semibold text-slate-400">Belum ada data manifest.</p>
-            <p>Silakan ubah kata kunci pencarian atau filter wilayah.</p>
+          <div className="p-12 text-center text-slate-400 text-xs font-semibold">
+            {startDate === endDate
+              ? `Belum ada manifest pada tanggal ${formatDateIndo(startDate)}.`
+              : `Belum ada manifest pada rentang tanggal ${formatDateIndo(startDate)} s/d ${formatDateIndo(endDate)}.`}
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950 text-slate-400 uppercase tracking-wider text-[10px] font-bold border-b border-slate-800">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider font-bold border-b border-slate-800">
                 <tr>
-                  {isSelectionMode && <th className="p-4 w-10 text-center">Pilih</th>}
+                  {isSelectionMode && <th className="p-4 text-center w-10">Select</th>}
                   <th className="p-4">No. Resi & Date</th>
                   <th className="p-4">Pengirim</th>
                   <th className="p-4">Penerima & Area</th>
-                  <th className="p-4">Barang & Koli</th>
-                  <th className="p-4">Ongkir / Kg</th>
-                  <th className="p-4">Total Ongkir</th>
-                  <th className="p-4">Payment</th>
-                  <th className="p-4">Status & Driver</th>
-                  <th className="p-4 text-center sticky right-0 bg-slate-950 shadow-l">AKSI</th>
+                  <th className="p-4">Detail Barang</th>
+                  <th className="p-4">Ongkir & Tagihan</th>
+                  <th className="p-4">Metode Bayar</th>
+                  <th className="p-4">Status Delivery</th>
+                  <th className="p-4">Driver & Armada</th>
+                  <th className="p-4 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-medium">
@@ -562,71 +675,83 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
                         </div>
                       </td>
 
-                      {/* Goods & Weight */}
+                      {/* Item Details */}
                       <td className="p-4 whitespace-nowrap">
-                        <div className="font-semibold text-slate-200">{m.itemName}</div>
+                        <div className="font-bold text-white">{m.itemName}</div>
                         <div className="text-[10px] text-slate-400 font-mono">
                           {m.weightKg} Kg • {m.koliCount} Koli
                         </div>
                       </td>
 
-                      {/* Rate / Kg */}
-                      <td className="p-4 whitespace-nowrap font-mono text-slate-300">
-                        Rp {m.shippingRatePerKg.toLocaleString('id-ID')}
-                      </td>
-
-                      {/* Total Shipping Fee */}
-                      <td className="p-4 whitespace-nowrap font-mono font-bold text-emerald-400">
-                        Rp {m.totalShippingFee.toLocaleString('id-ID')}
-                      </td>
-
-                      {/* Payment Method & Recipient Bill */}
+                      {/* Ongkir & Tagihan */}
                       <td className="p-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1">
-                          <span className="px-1.5 py-0.5 bg-slate-800 text-slate-300 font-mono text-[10px] rounded font-semibold">
-                            {m.paymentDeliveryMethod}
-                          </span>
+                        <div className="font-bold font-mono text-emerald-400">
+                          Rp {m.totalShippingFee.toLocaleString('id-ID')}
                         </div>
                         {m.totalRecipientBill > 0 && (
-                          <div className="text-[10px] font-mono text-amber-300 font-bold mt-0.5">
+                          <div className="text-[10px] font-mono text-amber-400">
                             Bill: Rp {m.totalRecipientBill.toLocaleString('id-ID')}
                           </div>
                         )}
                       </td>
 
-                      {/* Status & Driver */}
+                      {/* Payment Method */}
                       <td className="p-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            isVoid
-                              ? 'bg-red-950 text-red-400 border border-red-800/60'
-                              : m.deliveryStatus === 'READY'
-                              ? 'bg-sky-950 text-sky-400 border border-sky-800/60'
-                              : m.deliveryStatus === 'ASSIGNED'
-                              ? 'bg-amber-950 text-amber-400 border border-amber-800/60'
-                              : m.deliveryStatus === 'SUCCESS'
-                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
-                              : 'bg-slate-800 text-slate-300'
-                          }`}
-                        >
-                          {isVoid ? 'VOID' : m.deliveryStatus}
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-slate-800 text-slate-300 border border-slate-700">
+                          {m.paymentDeliveryMethod}
                         </span>
+                        <div className="text-[9px] text-slate-500 font-mono mt-0.5">
+                          {m.billingMode}
+                        </div>
+                      </td>
 
-                        {m.driver && (
-                          <div className="text-[10px] text-slate-300 font-medium mt-1">
-                            Driver: <strong className="text-white">{m.driver.fullName}</strong>
-                          </div>
+                      {/* Delivery Status */}
+                      <td className="p-4 whitespace-nowrap">
+                        {m.deliveryStatus === 'READY' && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            READY
+                          </span>
                         )}
-
-                        {m.vehicle && (
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            {m.vehicle.plateNumber}
-                          </div>
+                        {m.deliveryStatus === 'ASSIGNED' && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            ASSIGNED
+                          </span>
+                        )}
+                        {m.deliveryStatus === 'IN_DELIVERY' && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                            IN_DELIVERY
+                          </span>
+                        )}
+                        {m.deliveryStatus === 'SUCCESS' && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            SUCCESS
+                          </span>
+                        )}
+                        {m.deliveryStatus === 'CANCELLED' && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                            CANCELLED
+                          </span>
                         )}
                       </td>
 
-                      {/* STICKY ACTION COLUMN (Per-manifest dropdown menu) */}
-                      <td className="p-4 text-center sticky right-0 bg-slate-900 shadow-l">
+                      {/* Driver & Vehicle */}
+                      <td className="p-4 whitespace-nowrap">
+                        {m.driver ? (
+                          <div>
+                            <div className="font-bold text-slate-200">{m.driver.fullName}</div>
+                            {m.vehicle && (
+                              <div className="text-[10px] text-sky-400 font-mono">
+                                {m.vehicle.plateNumber} ({m.vehicle.nameType})
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 italic">Belum ditugaskan</span>
+                        )}
+                      </td>
+
+                      {/* Actions Column */}
+                      <td className="p-4 text-right whitespace-nowrap">
                         <div className="relative inline-block text-left">
                           <button
                             type="button"
@@ -688,37 +813,35 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
           </div>
         )}
 
-        {/* Pagination Footer */}
+        {/* Table Pagination Bar */}
         {totalPages > 1 && (
           <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
             <div>
-              Halaman <strong>{page}</strong> dari <strong>{totalPages}</strong>
+              Halaman <strong className="text-white font-mono">{page}</strong> dari{' '}
+              <strong className="text-white font-mono">{totalPages}</strong>
             </div>
 
             <div className="flex items-center gap-2">
               <button
-                disabled={page <= 1 || loading}
+                disabled={page <= 1}
                 onClick={() => {
-                  const newPage = page - 1;
-                  setPage(newPage);
-                  updateQueryParams(area, search, status, newPage);
+                  const newP = page - 1;
+                  setPage(newP);
+                  updateQueryParams(startDate, endDate, area, search, status, newP);
                 }}
-                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 font-semibold rounded-xl border border-slate-800 transition disabled:opacity-40 flex items-center gap-1"
+                className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-40 transition"
               >
                 <ChevronLeft className="w-4 h-4" />
-                <span>Sebelumnya</span>
               </button>
-
               <button
-                disabled={page >= totalPages || loading}
+                disabled={page >= totalPages}
                 onClick={() => {
-                  const newPage = page + 1;
-                  setPage(newPage);
-                  updateQueryParams(area, search, status, newPage);
+                  const newP = page + 1;
+                  setPage(newP);
+                  updateQueryParams(startDate, endDate, area, search, status, newP);
                 }}
-                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 font-semibold rounded-xl border border-slate-800 transition disabled:opacity-40 flex items-center gap-1"
+                className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-40 transition"
               >
-                <span>Selanjutnya</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -726,64 +849,75 @@ export function RincianManifestView({ userRole }: RincianManifestViewProps) {
         )}
       </div>
 
-      {/* MODALS */}
-      {/* 1. Global Bulk Scheduling Modal */}
-      <SchedulingModal
-        isOpen={isSchedulingModalOpen}
-        area={area}
-        selectedManifests={selectedManifestsList}
-        onClose={() => setIsSchedulingModalOpen(false)}
-        onSuccess={(info) => {
-          setSuccessFeedback(
-            `Berhasil menjadwalkan ${info.count} manifest ke driver ${info.driverName} (${info.vehiclePlate}).`
-          );
-          setIsSelectionMode(false);
-          setSelectedIds(new Set());
-          fetchData();
-        }}
-      />
+      {/* Modals */}
+      {isSchedulingModalOpen && (
+        <SchedulingModal
+          isOpen={isSchedulingModalOpen}
+          area={area}
+          selectedManifests={selectedManifestsList}
+          onClose={() => setIsSchedulingModalOpen(false)}
+          onSuccess={(info) => {
+            setIsSchedulingModalOpen(false);
+            setIsSelectionMode(false);
+            setSelectedIds(new Set());
+            setSuccessFeedback(
+              `Berhasil menjadwalkan ${info.count} manifest ke Driver ${info.driverName} (${info.vehiclePlate}).`
+            );
+            fetchData();
+          }}
+        />
+      )}
 
-      {/* 2. Edit Data Manifest Modal */}
-      <EditManifestModal
-        manifest={editingManifest}
-        isOpen={isEditDataModalOpen}
-        onClose={() => {
-          setIsEditDataModalOpen(false);
-          setEditingManifest(null);
-        }}
-        onSuccess={(msg) => {
-          setSuccessFeedback(msg);
-          fetchData();
-        }}
-      />
+      {isEditDataModalOpen && editingManifest && (
+        <EditManifestModal
+          isOpen={isEditDataModalOpen}
+          manifest={editingManifest}
+          onClose={() => {
+            setIsEditDataModalOpen(false);
+            setEditingManifest(null);
+          }}
+          onSuccess={(msg) => {
+            setIsEditDataModalOpen(false);
+            setEditingManifest(null);
+            setSuccessFeedback(msg);
+            fetchData();
+          }}
+        />
+      )}
 
-      {/* 3. Edit Penjadwalan (Reassignment) Modal */}
-      <EditSchedulingModal
-        manifest={editingSchedulingManifest}
-        isOpen={isEditSchedulingModalOpen}
-        onClose={() => {
-          setIsEditSchedulingModalOpen(false);
-          setEditingSchedulingManifest(null);
-        }}
-        onSuccess={(msg) => {
-          setSuccessFeedback(msg);
-          fetchData();
-        }}
-      />
+      {isEditSchedulingModalOpen && editingSchedulingManifest && (
+        <EditSchedulingModal
+          isOpen={isEditSchedulingModalOpen}
+          manifest={editingSchedulingManifest}
+          onClose={() => {
+            setIsEditSchedulingModalOpen(false);
+            setEditingSchedulingManifest(null);
+          }}
+          onSuccess={(msg) => {
+            setIsEditSchedulingModalOpen(false);
+            setEditingSchedulingManifest(null);
+            setSuccessFeedback(msg);
+            fetchData();
+          }}
+        />
+      )}
 
-      {/* 4. Soft Void Confirmation Modal */}
-      <VoidManifestModal
-        manifest={voidingManifest}
-        isOpen={isVoidModalOpen}
-        onClose={() => {
-          setIsVoidModalOpen(false);
-          setVoidingManifest(null);
-        }}
-        onSuccess={(msg) => {
-          setSuccessFeedback(msg);
-          fetchData();
-        }}
-      />
+      {isVoidModalOpen && voidingManifest && (
+        <VoidManifestModal
+          isOpen={isVoidModalOpen}
+          manifest={voidingManifest}
+          onClose={() => {
+            setIsVoidModalOpen(false);
+            setVoidingManifest(null);
+          }}
+          onSuccess={(msg) => {
+            setIsVoidModalOpen(false);
+            setVoidingManifest(null);
+            setSuccessFeedback(msg);
+            fetchData();
+          }}
+        />
+      )}
     </div>
   );
 }
