@@ -481,30 +481,33 @@ export function InputManifestForm() {
           
           {/* 1. DATA PENGIRIM CARD (LEFT) */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
-                <User className="w-4 h-4 text-sky-400" />
-                <span>1. Data Pengirim (Sender)</span>
+                <User className="w-4 h-4 text-sky-400 shrink-0" />
+                <span className="whitespace-nowrap">1. Data Pengirim (Sender)</span>
               </div>
-
-              {customers.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400 font-medium hidden sm:inline">Pelanggan:</span>
-                  <select
-                    value={selectedCustomerId}
-                    onChange={handleCustomerSelect}
-                    className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
-                  >
-                    <option value="">-- Isi Manual --</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.phone})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
+
+            {/* PILIH PELANGGAN (FULL WIDTH BELOW HEADING) */}
+            {customers.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">
+                  Pilih Pelanggan Terdaftar (Opsional)
+                </label>
+                <select
+                  value={selectedCustomerId}
+                  onChange={handleCustomerSelect}
+                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                >
+                  <option value="">-- Isi Manual --</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.phone})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* SENDER HISTORY AUTOCOMPLETE SEARCH */}
             <div className="relative" ref={senderDropdownRef}>
@@ -658,8 +661,8 @@ export function InputManifestForm() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
-                <MapPin className="w-4 h-4" />
-                <span>2. Data Penerima (Recipient)</span>
+                <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
+                <span className="whitespace-nowrap">2. Data Penerima (Recipient)</span>
               </div>
             </div>
 
