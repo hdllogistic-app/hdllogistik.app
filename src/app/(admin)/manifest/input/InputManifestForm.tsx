@@ -476,189 +476,191 @@ export function InputManifestForm() {
       {/* Form Container Grid Layout */}
       <div className="space-y-6">
         
-        {/* ROW 1: 1. DATA PENGIRIM (LEFT CARD) & 2. DATA PENERIMA (RIGHT CARD) SIDE-BY-SIDE ON DESKTOP */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+        {/* ROW 1: 1. DATA PENGIRIM (LEFT CARD) & 2. DATA PENERIMA (RIGHT CARD) SIDE-BY-SIDE ON DESKTOP WITH MATCHING HEIGHT */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
           
           {/* 1. DATA PENGIRIM CARD (LEFT) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
-                <User className="w-4 h-4 text-sky-400 shrink-0" />
-                <span className="whitespace-nowrap">1. Data Pengirim (Sender)</span>
-              </div>
-            </div>
-
-            {/* PILIH PELANGGAN (FULL WIDTH BELOW HEADING) */}
-            {customers.length > 0 && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">
-                  Pilih Pelanggan Terdaftar (Opsional)
-                </label>
-                <select
-                  value={selectedCustomerId}
-                  onChange={handleCustomerSelect}
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
-                >
-                  <option value="">-- Isi Manual --</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.phone})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* SENDER HISTORY AUTOCOMPLETE SEARCH */}
-            <div className="relative" ref={senderDropdownRef}>
-              <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5 text-sky-400" />
-                <span>Cari dari Riwayat Pengirim</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={senderSearchQuery}
-                  onFocus={() => {
-                    setShowSenderDropdown(true);
-                    fetchSenderHistory(senderSearchQuery);
-                  }}
-                  onChange={(e) => {
-                    setSenderSearchQuery(e.target.value);
-                    setShowSenderDropdown(true);
-                  }}
-                  onKeyDown={(e) => {
-                    if (!showSenderDropdown) return;
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setSenderHighlightedIndex((prev) =>
-                        prev < senderSuggestions.length - 1 ? prev + 1 : 0
-                      );
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setSenderHighlightedIndex((prev) =>
-                        prev > 0 ? prev - 1 : senderSuggestions.length - 1
-                      );
-                    } else if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (
-                        senderHighlightedIndex >= 0 &&
-                        senderHighlightedIndex < senderSuggestions.length
-                      ) {
-                        handleSelectSenderItem(senderSuggestions[senderHighlightedIndex]);
-                      }
-                    } else if (e.key === 'Escape') {
-                      setShowSenderDropdown(false);
-                    }
-                  }}
-                  placeholder="Cari nama atau nomor HP pengirim..."
-                  className="w-full pl-9 pr-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
-                />
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 h-full flex flex-col justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
+                  <User className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span className="whitespace-nowrap">1. Data Pengirim (Sender)</span>
+                </div>
               </div>
 
-              {/* SENDER SUGGESTION PANEL */}
-              {showSenderDropdown && (
-                <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800/60 max-h-64 overflow-y-auto animate-fadeIn">
-                  {loadingSenderHistory ? (
-                    <div className="p-3 text-xs text-slate-500 flex items-center justify-center gap-2">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
-                      <span>Mencari riwayat pengirim...</span>
-                    </div>
-                  ) : senderSuggestions.length === 0 ? (
-                    <div className="p-3 text-xs text-slate-500 text-center">
-                      Tidak ada riwayat pengirim yang cocok.
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="px-3 py-1.5 bg-slate-900/80 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                        {senderSearchQuery.length >= 2 ? 'Hasil Pencarian Riwayat' : 'Riwayat Pengirim Terakhir'}
-                      </div>
-                      {senderSuggestions.map((item, idx) => (
-                        <div
-                          key={`${item.phone}-${idx}`}
-                          onClick={() => handleSelectSenderItem(item)}
-                          className={`p-3 cursor-pointer transition flex items-center justify-between text-xs ${
-                            senderHighlightedIndex === idx
-                              ? 'bg-sky-950/80 text-white'
-                              : 'hover:bg-slate-900/90 text-slate-300'
-                          }`}
-                        >
-                          <div>
-                            <div className="font-bold text-white flex items-center gap-2">
-                              <span>{item.name}</span>
-                              <span className="font-mono text-[11px] text-sky-400 font-normal">
-                                ({item.phone})
-                              </span>
-                            </div>
-                            <div className="text-[11px] text-slate-400 truncate max-w-xs mt-0.5">
-                              {item.address}
-                            </div>
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-mono shrink-0 ml-3">
-                            {new Date(item.lastUsedAt).toLocaleDateString('id-ID', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {/* PILIH PELANGGAN (FULL WIDTH BELOW HEADING) */}
+              {customers.length > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    Pilih Pelanggan Terdaftar (Opsional)
+                  </label>
+                  <select
+                    value={selectedCustomerId}
+                    onChange={handleCustomerSelect}
+                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                  >
+                    <option value="">-- Isi Manual --</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.phone})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
-            </div>
 
-            {/* Nama & No HP Pengirim Pair */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
-              <div className="sm:col-span-7">
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nama Pengirim <span className="text-red-400">*</span>
+              {/* SENDER HISTORY AUTOCOMPLETE SEARCH */}
+              <div className="relative" ref={senderDropdownRef}>
+                <label className="block text-xs font-semibold text-slate-400 mb-1 flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Cari dari Riwayat Pengirim</span>
                 </label>
-                <input
-                  type="text"
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={senderSearchQuery}
+                    onFocus={() => {
+                      setShowSenderDropdown(true);
+                      fetchSenderHistory(senderSearchQuery);
+                    }}
+                    onChange={(e) => {
+                      setSenderSearchQuery(e.target.value);
+                      setShowSenderDropdown(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!showSenderDropdown) return;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setSenderHighlightedIndex((prev) =>
+                          prev < senderSuggestions.length - 1 ? prev + 1 : 0
+                        );
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setSenderHighlightedIndex((prev) =>
+                          prev > 0 ? prev - 1 : senderSuggestions.length - 1
+                        );
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (
+                          senderHighlightedIndex >= 0 &&
+                          senderHighlightedIndex < senderSuggestions.length
+                        ) {
+                          handleSelectSenderItem(senderSuggestions[senderHighlightedIndex]);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setShowSenderDropdown(false);
+                      }
+                    }}
+                    placeholder="Cari nama atau nomor HP pengirim..."
+                    className="w-full pl-9 pr-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                  />
+                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                </div>
+
+                {/* SENDER SUGGESTION PANEL */}
+                {showSenderDropdown && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800/60 max-h-64 overflow-y-auto animate-fadeIn">
+                    {loadingSenderHistory ? (
+                      <div className="p-3 text-xs text-slate-500 flex items-center justify-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                        <span>Mencari riwayat pengirim...</span>
+                      </div>
+                    ) : senderSuggestions.length === 0 ? (
+                      <div className="p-3 text-xs text-slate-500 text-center">
+                        Tidak ada riwayat pengirim yang cocok.
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="px-3 py-1.5 bg-slate-900/80 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                          {senderSearchQuery.length >= 2 ? 'Hasil Pencarian Riwayat' : 'Riwayat Pengirim Terakhir'}
+                        </div>
+                        {senderSuggestions.map((item, idx) => (
+                          <div
+                            key={`${item.phone}-${idx}`}
+                            onClick={() => handleSelectSenderItem(item)}
+                            className={`p-3 cursor-pointer transition flex items-center justify-between text-xs ${
+                              senderHighlightedIndex === idx
+                                ? 'bg-sky-950/80 text-white'
+                                : 'hover:bg-slate-900/90 text-slate-300'
+                            }`}
+                          >
+                            <div>
+                              <div className="font-bold text-white flex items-center gap-2">
+                                <span>{item.name}</span>
+                                <span className="font-mono text-[11px] text-sky-400 font-normal">
+                                  ({item.phone})
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-400 truncate max-w-xs mt-0.5">
+                                {item.address}
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono shrink-0 ml-3">
+                              {new Date(item.lastUsedAt).toLocaleDateString('id-ID', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Nama & No HP Pengirim Pair */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                <div className="sm:col-span-7">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Nama Pengirim <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={senderName}
+                    onChange={(e) => setSenderName(e.target.value)}
+                    placeholder="Contoh: Toko Sentosa"
+                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="sm:col-span-5">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Nomor HP Pengirim <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={senderPhone}
+                    onChange={(e) => setSenderPhone(e.target.value)}
+                    placeholder="Contoh: 08123456789"
+                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Alamat Lengkap Pengirim */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Alamat Lengkap Pengirim <span className="text-red-400">*</span>
+                </label>
+                <textarea
+                  rows={3}
                   required
-                  value={senderName}
-                  onChange={(e) => setSenderName(e.target.value)}
-                  placeholder="Contoh: Toko Sentosa"
+                  value={senderAddress}
+                  onChange={(e) => setSenderAddress(e.target.value)}
+                  placeholder="Contoh: Jl. Industri No. 45, Bandung"
                   className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
                 />
               </div>
-
-              <div className="sm:col-span-5">
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nomor HP Pengirim <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={senderPhone}
-                  onChange={(e) => setSenderPhone(e.target.value)}
-                  placeholder="Contoh: 08123456789"
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Alamat Lengkap Pengirim */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Alamat Lengkap Pengirim <span className="text-red-400">*</span>
-              </label>
-              <textarea
-                rows={3}
-                required
-                value={senderAddress}
-                onChange={(e) => setSenderAddress(e.target.value)}
-                placeholder="Contoh: Jl. Industri No. 45, Bandung"
-                className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none"
-              />
             </div>
           </div>
 
           {/* 2. DATA PENERIMA CARD (RIGHT) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 h-full flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sky-400 font-bold text-sm uppercase tracking-wider">
                 <MapPin className="w-4 h-4 text-sky-400 shrink-0" />
