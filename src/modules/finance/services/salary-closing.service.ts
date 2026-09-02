@@ -21,6 +21,7 @@ export interface ExecuteSalaryClosingDTO {
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   employeeIds?: string[]; // Selected team members (if empty, closes all eligible)
+  customDeductions?: Record<string, number>; // Map employeeId -> requested cashAdvanceDeduction
   paymentMethod?: PaymentMethod;
   notes?: string;
 }
@@ -155,7 +156,7 @@ export async function executeSalaryClosingService(
   userId: string
 ) {
   try {
-    const { startDate, endDate, employeeIds, paymentMethod = 'TRANSFER', notes } = dto;
+    const { startDate, endDate, employeeIds, customDeductions, paymentMethod = 'TRANSFER', notes } = dto;
 
     const { sDate, eDate, startUtc, endUtc } = getAsiaJakartaRangeBoundary(
       startDate,
@@ -218,7 +219,15 @@ export async function executeSalaryClosingService(
 
         const outstandingCA = Math.max(0, caBalDec.toNumber());
         const grossNum = grossDec.toNumber();
-        const caDeductionNum = Math.min(grossNum, outstandingCA);
+
+        // Handle custom deduction passed from UI (or default to min(gross, outstanding))
+        const requestedDeduction =
+          customDeductions && typeof customDeductions[empId] === 'number'
+            ? customDeductions[empId]
+            : Math.min(grossNum, outstandingCA);
+
+        const validRequested = Math.max(0, requestedDeduction);
+        const caDeductionNum = Math.min(validRequested, grossNum, outstandingCA);
         const netSalaryNum = Math.max(0, grossNum - caDeductionNum);
 
         const payoutNumber = `PAY-${sDate.replace(/-/g, '').slice(2)}-${emp.employeeCode}-${timestamp}${idx++}`;
@@ -281,6 +290,7 @@ export async function executeSalaryClosingService(
               employeeId: empId,
               grossAmount: grossNum,
               netAmount: netSalaryNum,
+              cashAdvanceDeduction: caDeductionNum,
             }),
           },
         });
@@ -300,7 +310,7 @@ export async function executeSalaryClosingService(
     console.error('[Execute Salary Closing Error]', err);
     return {
       success: false,
-      error: err.message || 'Gagal memproses salary closing.',
+      error: err.message || 'Gagal memproses closing salary.',
     };
   }
 }
@@ -308,13 +318,13 @@ export async function executeSalaryClosingService(
 export async function getSalaryClosingHistoryService() {
   try {
     const payouts = await prisma.salaryPayout.findMany({
+      where: { status: 'PAID' },
       include: {
         employee: true,
         processedBy: true,
         items: true,
       },
       orderBy: { createdAt: 'desc' },
-      take: 100,
     });
 
     return {
@@ -339,7 +349,7 @@ export async function getSalaryClosingHistoryService() {
     };
   } catch (err) {
     console.error('[Get Salary Closing History Error]', err);
-    return { success: false, error: 'Gagal mengambil riwayat salary closing.' };
+    return { success: false, error: 'Gagal mengambil riwayat closing salary.' };
   }
 }
 
@@ -350,16 +360,12 @@ export async function getSalarySlipSnapshotService(payoutId: string) {
       include: {
         employee: true,
         processedBy: true,
-        items: {
-          include: {
-            salaryEntry: true,
-          },
-        },
+        items: true,
       },
     });
 
     if (!payout) {
-      return { success: false, error: 'Slip gaji tidak ditemukan.' };
+      return { success: false, error: 'Data slip gaji tidak ditemukan.' };
     }
 
     return {
@@ -380,15 +386,11 @@ export async function getSalarySlipSnapshotService(payoutId: string) {
         paymentMethod: payout.paymentMethod,
         processedByName: payout.processedBy.name,
         createdAt: payout.createdAt.toISOString(),
-        entries: payout.items.map((i) => ({
-          date: i.salaryEntry.date.toISOString().split('T')[0],
-          amount: i.amount.toNumber(),
-          rate: i.salaryEntry.dailyRateApplied.toNumber(),
-        })),
       },
     };
   } catch (err) {
     console.error('[Get Salary Slip Snapshot Error]', err);
-    return { success: false, error: 'Gagal memuat rincian slip gaji.' };
+    return { success: false, error: 'Gagal memuat snapshot slip gaji.' };
   }
 }
+

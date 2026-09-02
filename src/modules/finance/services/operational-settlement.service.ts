@@ -1,9 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma, OperationalExpenseCategory, OperationalExpenseStatus } from '@/generated/prisma/client';
+import { createCashAdvanceDisbursementService, getCashAdvanceLedgerService } from './cash-advance.service';
 
 export interface CreateExpenseDTO {
   date: string; // YYYY-MM-DD
-  category: OperationalExpenseCategory;
+  category: OperationalExpenseCategory | 'KASBON';
   amount: number;
   description: string;
   vehicleId?: string | null;
@@ -13,7 +14,7 @@ export interface CreateExpenseDTO {
 
 export interface EditExpenseDTO {
   date?: string;
-  category?: OperationalExpenseCategory;
+  category?: OperationalExpenseCategory | 'KASBON';
   amount?: number;
   description?: string;
   vehicleId?: string | null;
@@ -59,9 +60,46 @@ export async function getOperationalExpensesService(filters: ExpenseFilters) {
       filters.endDate
     );
 
+    // If filter is explicitly KASBON, query CashAdvanceTransaction ledger
+    if (filters.category === 'KASBON') {
+      const ledger = await getCashAdvanceLedgerService(sDate, eDate, filters.search);
+      const txs = ledger.transactions || [];
+
+      const totalAmount = txs.reduce((sum, t) => sum + (t.type === 'DISBURSEMENT' ? t.amount : 0), 0);
+
+      return {
+        success: true,
+        startDate: sDate,
+        endDate: eDate,
+        summary: {
+          totalAmount,
+          transactionCount: txs.length,
+          topCategory: 'Kasbon Karyawan',
+          topCategoryAmount: totalAmount,
+          dailyAverage: Number(totalAmount.toFixed(2)),
+        },
+        expenses: txs.map((t) => ({
+          id: t.id,
+          date: t.date,
+          category: 'KASBON' as any,
+          amount: t.amount,
+          status: 'ACTIVE',
+          description: `${t.type === 'DISBURSEMENT' ? '[KASBON]' : '[POTONGAN]'} ${t.description}`,
+          vehiclePlate: null,
+          employeeName: `${t.employeeName} (${t.division})`,
+          createdByName: t.createdByName,
+          voidReason: null,
+          voidedAt: null,
+          createdAt: t.createdAt,
+          type: t.type,
+          repaymentSource: t.repaymentSource,
+        })),
+      };
+    }
+
     const where: Prisma.OperationalExpenseWhereInput = {
       date: { gte: startUtc, lte: endUtc },
-      ...(filters.category && filters.category !== 'ALL'
+      ...(filters.category && filters.category !== 'ALL' && filters.category !== 'KASBON'
         ? { category: filters.category as OperationalExpenseCategory }
         : {}),
       ...(filters.status && filters.status !== 'ALL'
@@ -155,6 +193,22 @@ export async function createOperationalExpenseService(
   userId: string
 ) {
   try {
+    // If category is KASBON, route to CashAdvanceTransaction ledger
+    if (dto.category === 'KASBON') {
+      if (!dto.employeeId) {
+        return { success: false, error: 'Karyawan penerima kasbon wajib dipilih.' };
+      }
+      return await createCashAdvanceDisbursementService(
+        {
+          employeeId: dto.employeeId,
+          amount: dto.amount,
+          date: dto.date,
+          description: dto.description,
+        },
+        userId
+      );
+    }
+
     if (!dto.description || !dto.description.trim()) {
       return { success: false, error: 'Keterangan pengeluaran wajib diisi.' };
     }
@@ -169,7 +223,7 @@ export async function createOperationalExpenseService(
       const created = await tx.operationalExpense.create({
         data: {
           date: dateUtc,
-          category: dto.category,
+          category: dto.category as OperationalExpenseCategory,
           amount: new Prisma.Decimal(dto.amount),
           description: dto.description.trim(),
           vehicleId: dto.vehicleId || null,
@@ -219,11 +273,11 @@ export async function voidOperationalExpenseService(
     });
 
     if (!expense) {
-      return { success: false, error: 'Data pengeluaran tidak ditemukan.' };
+      return { success: false, error: 'Data pengeluaran operasional tidak ditemukan.' };
     }
 
     if (expense.status === 'VOID') {
-      return { success: false, error: 'Pengeluaran ini sudah di-void sebelumnya.' };
+      return { success: false, error: 'Data pengeluaran operasional sudah berstatus VOID.' };
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -256,6 +310,6 @@ export async function voidOperationalExpenseService(
     return { success: true, expense: updated };
   } catch (err) {
     console.error('[Void Operational Expense Error]', err);
-    return { success: false, error: 'Gagal melakukan void pengeluaran.' };
+    return { success: false, error: 'Gagal membatalkan pengeluaran operasional.' };
   }
 }

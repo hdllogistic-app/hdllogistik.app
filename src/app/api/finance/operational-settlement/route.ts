@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     const result = await createOperationalExpenseService(body, user.userId);
 
     if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      return NextResponse.json({ success: false, error: (result as any).error || 'Gagal menyimpan data.' }, { status: 400 });
     }
 
     return NextResponse.json(result);
