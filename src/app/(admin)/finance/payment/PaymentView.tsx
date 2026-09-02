@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CreditCard,
   Search,
@@ -21,6 +22,7 @@ import {
   Image as ImageIcon,
 } from 'lucide-react';
 import { PaymentListItemDTO } from '@/modules/payment/services/payment.service';
+import { getTodayJakartaStr } from '@/modules/manifest/utils/date-utils';
 
 interface TimelineAdjustment {
   id: string;
@@ -63,20 +65,30 @@ interface HistoryData {
   transactions: TimelineTransaction[];
 }
 
-export function PaymentView() {
-  const getTodayStr = () => {
-    const now = new Date();
-    const jkt = new Date(now.getTime() + 7 * 60 * 60 * 1000);
-    return jkt.toISOString().split('T')[0];
-  };
+function formatDateIndo(dateStr: string): string {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const [y, m, d] = dateStr.split('-');
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+    'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+  ];
+  const mIdx = parseInt(m, 10) - 1;
+  return `${d} ${months[mIdx] || m} ${y}`;
+}
 
-  const [startDate, setStartDate] = useState<string>(getTodayStr());
-  const [endDate, setEndDate] = useState<string>(getTodayStr());
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [serviceFilter, setServiceFilter] = useState<string>('ALL');
-  const [settlementFilter, setSettlementFilter] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [currentPage, setCurrentPage] = useState<number>(1);
+export function PaymentView() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const todayStr = getTodayJakartaStr();
+
+  const [startDate, setStartDate] = useState<string>(searchParams.get('startDate') || todayStr);
+  const [endDate, setEndDate] = useState<string>(searchParams.get('endDate') || todayStr);
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('statusFilter') || 'ALL');
+  const [serviceFilter, setServiceFilter] = useState<string>(searchParams.get('serviceFilter') || 'ALL');
+  const [settlementFilter, setSettlementFilter] = useState<string>(searchParams.get('settlementFilter') || 'ALL');
+  const [searchQuery, setSearchQuery] = useState<string>(searchParams.get('searchQuery') || '');
+  const [currentPage, setCurrentPage] = useState<number>(Number(searchParams.get('page')) || 1);
 
   const [items, setItems] = useState<PaymentListItemDTO[]>([]);
   const [summary, setSummary] = useState({
@@ -125,13 +137,55 @@ export function PaymentView() {
   const [viewingProofUrl, setViewingProofUrl] = useState<string | null>(null);
   const [loadingProof, setLoadingProof] = useState<boolean>(false);
 
+  const updateQueryParams = (
+    newStart: string,
+    newEnd: string,
+    newStatus: string,
+    newService: string,
+    newSettlement: string,
+    newSearch: string,
+    newPage: number
+  ) => {
+    const params = new URLSearchParams();
+    if (newStart) params.set('startDate', newStart);
+    if (newEnd) params.set('endDate', newEnd);
+    if (newStatus !== 'ALL') params.set('statusFilter', newStatus);
+    if (newService !== 'ALL') params.set('serviceFilter', newService);
+    if (newSettlement !== 'ALL') params.set('settlementFilter', newSettlement);
+    if (newSearch.trim()) params.set('searchQuery', newSearch.trim());
+    if (newPage > 1) params.set('page', String(newPage));
+
+    router.replace(`/finance/payment?${params.toString()}`);
+  };
+
   const fetchPayments = useCallback(async () => {
+    if (startDate && endDate && startDate > endDate) {
+      setErrorMessage('Tanggal awal tidak boleh melebihi tanggal akhir.');
+      setItems([]);
+      setSummary({
+        totalResi: 0,
+        unadjustedCount: 0,
+        adjustedCount: 0,
+        totalSettledRevenue: 0,
+        cashRevenue: 0,
+        transferRevenue: 0,
+      });
+      setPagination({
+        page: 1,
+        limit: 25,
+        totalResi: 0,
+        totalPages: 1,
+      });
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setErrorMessage(null);
 
     const params = new URLSearchParams();
-    params.set('startDate', startDate);
-    params.set('endDate', endDate);
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
     if (statusFilter !== 'ALL') params.set('statusFilter', statusFilter);
     if (serviceFilter !== 'ALL') params.set('serviceFilter', serviceFilter);
     if (settlementFilter !== 'ALL') params.set('settlementFilter', settlementFilter);
@@ -163,7 +217,16 @@ export function PaymentView() {
           }
         );
       } else {
-        setErrorMessage(data.error || 'Gagal memuat data payment resi.');
+        setErrorMessage(data.error || 'Gagal mengambil data payment resi.');
+        setItems([]);
+        setSummary({
+          totalResi: 0,
+          unadjustedCount: 0,
+          adjustedCount: 0,
+          totalSettledRevenue: 0,
+          cashRevenue: 0,
+          transferRevenue: 0,
+        });
       }
     } catch {
       setErrorMessage('Terjadi kesalahan koneksi ke server.');
@@ -176,126 +239,134 @@ export function PaymentView() {
     fetchPayments();
   }, [fetchPayments]);
 
-  const handleOpenAdjustmentModal = (item: PaymentListItemDTO, edit: boolean = false) => {
+  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setStartDate(val);
+    setCurrentPage(1);
+    updateQueryParams(val, endDate, statusFilter, serviceFilter, settlementFilter, searchQuery, 1);
+  };
+
+  const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setEndDate(val);
+    setCurrentPage(1);
+    updateQueryParams(startDate, val, statusFilter, serviceFilter, settlementFilter, searchQuery, 1);
+  };
+
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setStatusFilter(val);
+    setCurrentPage(1);
+    updateQueryParams(startDate, endDate, val, serviceFilter, settlementFilter, searchQuery, 1);
+  };
+
+  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setServiceFilter(val);
+    setCurrentPage(1);
+    updateQueryParams(startDate, endDate, statusFilter, val, settlementFilter, searchQuery, 1);
+  };
+
+  const handleSettlementChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setSettlementFilter(val);
+    setCurrentPage(1);
+    updateQueryParams(startDate, endDate, statusFilter, serviceFilter, val, searchQuery, 1);
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setSearchQuery(val);
+    setCurrentPage(1);
+    updateQueryParams(startDate, endDate, statusFilter, serviceFilter, settlementFilter, val, 1);
+  };
+
+  const handleOpenAdjustmentModal = (item: PaymentListItemDTO, isEdit: boolean) => {
+    setActiveMenuResiId(null);
     setTargetItem(item);
-    setIsEditMode(edit);
-
-    if (edit) {
-      setFormService(item.paymentDeliveryMethod === 'COD' ? 'COD' : 'DFOD');
-      setFormShippingFee(String(item.shippingFee));
-      setFormCodAmount(String(item.codAmount));
-      setFormSettlementMethod(
-        item.latestSettlementMethod === 'TRANSFER' ? 'TRANSFER' : 'CASH'
-      );
-      setFormReason('Koreksi adjustment pembayaran');
-    } else {
-      setFormService(item.paymentDeliveryMethod === 'COD' ? 'COD' : 'DFOD');
-      setFormShippingFee(String(item.shippingFee));
-      setFormCodAmount(String(item.codAmount));
-      setFormSettlementMethod('CASH');
-      setFormReason('Adjustment pembayaran awal');
-    }
-
+    setIsEditMode(isEdit);
+    setFormService(item.paymentDeliveryMethod === 'COD' ? 'COD' : 'DFOD');
+    setFormShippingFee(String(item.shippingFee));
+    setFormCodAmount(item.paymentDeliveryMethod === 'COD' ? String(item.codAmount) : '');
+    setFormSettlementMethod(
+      item.latestSettlementMethod === 'TRANSFER' ? 'TRANSFER' : 'CASH'
+    );
+    setFormReason('');
     setSelectedFile(null);
     setFilePreviewUrl(null);
     setIsAdjModalOpen(true);
-    setActiveMenuResiId(null);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setErrorMessage('Format file tidak didukung. Gunakan JPEG, PNG, atau WEBP.');
-      return;
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setFilePreviewUrl(URL.createObjectURL(file));
     }
-
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMessage('Ukuran file melebihi batas 5 MB.');
-      return;
-    }
-
-    setSelectedFile(file);
-    setFilePreviewUrl(URL.createObjectURL(file));
   };
 
   const handleSubmitAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetItem) return;
 
-    const fee = parseFloat(formShippingFee);
-    if (isNaN(fee) || fee < 0) {
-      setErrorMessage('Revisi ongkir harus berupa angka valid >= 0.');
-      return;
-    }
-
-    const cod = formService === 'COD' ? parseFloat(formCodAmount) : 0;
-    if (formService === 'COD' && (isNaN(cod) || cod < 0)) {
-      setErrorMessage('Nominal COD harus berupa angka valid >= 0.');
-      return;
-    }
-
     setSubmitting(true);
     setErrorMessage(null);
 
     const formData = new FormData();
-    if (isEditMode) {
-      formData.append('adjustmentId', targetItem.latestAdjustmentId || '');
-    } else {
-      formData.append('manifestId', targetItem.manifestId);
-    }
+    formData.append('manifestId', targetItem.manifestId);
     formData.append('newPaymentDeliveryMethod', formService);
-    formData.append('newShippingFee', String(fee));
-    formData.append('newCodAmount', String(cod));
+    formData.append('newShippingFee', formShippingFee);
+    if (formService === 'COD') {
+      formData.append('newCodAmount', formCodAmount);
+    }
     formData.append('settlementMethod', formSettlementMethod);
-    formData.append('reason', formReason.trim() || 'Adjustment pembayaran');
-
+    formData.append('reason', formReason);
     if (selectedFile) {
       formData.append('proofFile', selectedFile);
     }
 
     try {
-      const endpoint = isEditMode
+      const url = isEditMode
         ? `/api/finance/payment/adjustments/${targetItem.latestAdjustmentId}`
         : '/api/finance/payment';
+      const method = isEditMode ? 'PATCH' : 'POST';
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
+      const res = await fetch(url, {
+        method,
         body: formData,
       });
 
       const data = await res.json();
+
       if (data.success) {
         setIsAdjModalOpen(false);
         fetchPayments();
       } else {
-        setErrorMessage(data.error || 'Gagal menyimpan adjustment pembayaran.');
+        setErrorMessage(data.error || 'Gagal menyimpan adjustment.');
       }
     } catch {
-      setErrorMessage('Terjadi kesalahan koneksi server.');
+      setErrorMessage('Terjadi kesalahan koneksi ke server.');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleOpenHistoryModal = async (manifestId: string) => {
+    setActiveMenuResiId(null);
     setIsHistoryModalOpen(true);
     setLoadingHistory(true);
     setHistoryData(null);
-    setActiveMenuResiId(null);
 
     try {
       const res = await fetch(`/api/finance/payment/manifests/${manifestId}/history`);
       const data = await res.json();
-
       if (data.success) {
         setHistoryData(data);
       } else {
-        setErrorMessage(data.error || 'Gagal memuat riwayat adjustment.');
+        setErrorMessage(data.error || 'Gagal memuat history adjustment.');
       }
     } catch {
-      setErrorMessage('Terjadi kesalahan koneksi.');
+      setErrorMessage('Terjadi kesalahan koneksi ke server.');
     } finally {
       setLoadingHistory(false);
     }
@@ -303,20 +374,16 @@ export function PaymentView() {
 
   const handleViewProof = async (adjId: string) => {
     setLoadingProof(true);
-    setViewingProofUrl(null);
     try {
       const res = await fetch(`/api/finance/payment/adjustments/${adjId}/proof`);
       const data = await res.json();
-
-      if (data.success && data.url) {
-        setViewingProofUrl(data.url);
-      } else if (data.isR2Missing) {
-        alert('R2 PRODUCTION CONFIGURATION REQUIRED: Infrastruktur Cloudflare R2 belum dikonfigurasi di environment server.');
+      if (data.success && data.signedUrl) {
+        setViewingProofUrl(data.signedUrl);
       } else {
-        alert(data.error || 'Bukti transfer tidak dapat dimuat.');
+        alert(data.error || 'Bukti transfer tidak dapat ditampilkan.');
       }
     } catch {
-      alert('Gagal mengambil presigned URL bukti transfer.');
+      alert('Gagal mengambil bukti transfer.');
     } finally {
       setLoadingProof(false);
     }
@@ -406,7 +473,7 @@ export function PaymentView() {
           <input
             type="date"
             value={startDate}
-            onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
+            onChange={handleStartDateChange}
             className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
           />
         </div>
@@ -416,7 +483,7 @@ export function PaymentView() {
           <input
             type="date"
             value={endDate}
-            onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
+            onChange={handleEndDateChange}
             className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
           />
         </div>
@@ -425,7 +492,7 @@ export function PaymentView() {
           <label className="block font-semibold text-slate-400 mb-1">Status Adjustment</label>
           <select
             value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+            onChange={handleStatusChange}
             className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
           >
             <option value="ALL">Semua Status</option>
@@ -438,7 +505,7 @@ export function PaymentView() {
           <label className="block font-semibold text-slate-400 mb-1">Layanan Service</label>
           <select
             value={serviceFilter}
-            onChange={(e) => { setServiceFilter(e.target.value); setCurrentPage(1); }}
+            onChange={handleServiceChange}
             className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
           >
             <option value="ALL">Semua Layanan</option>
@@ -451,7 +518,7 @@ export function PaymentView() {
           <label className="block font-semibold text-slate-400 mb-1">Settlement Payment</label>
           <select
             value={settlementFilter}
-            onChange={(e) => { setSettlementFilter(e.target.value); setCurrentPage(1); }}
+            onChange={handleSettlementChange}
             className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
           >
             <option value="ALL">Semua Settlement</option>
@@ -465,7 +532,7 @@ export function PaymentView() {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            onChange={handleSearchChange}
             placeholder="Cari resi / pengirim..."
             className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white focus:ring-2 focus:ring-sky-500 focus:outline-none"
           />
@@ -482,7 +549,11 @@ export function PaymentView() {
         ) : items.length === 0 ? (
           <div className="p-12 text-center text-slate-500 text-xs space-y-2">
             <Receipt className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-            <p className="font-semibold text-slate-400">Belum ada data payment pada periode ini.</p>
+            <p className="font-semibold text-slate-400">
+              {startDate === endDate
+                ? `Belum ada resi Payment pada periode ${formatDateIndo(startDate)}.`
+                : `Belum ada resi Payment pada periode ${formatDateIndo(startDate)} s/d ${formatDateIndo(endDate)}.`}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -493,10 +564,10 @@ export function PaymentView() {
                   <th className="p-4">Tanggal</th>
                   <th className="p-4">Pengirim / Penerima</th>
                   <th className="p-4">Area</th>
-                  <th className="p-4 text-center">Layanan</th>
-                  <th className="p-4 text-right">Ongkir (Revenue)</th>
-                  <th className="p-4 text-right">Tagihan Total</th>
-                  <th className="p-4 text-center">Status Payment</th>
+                  <th className="p-4 text-center">Service</th>
+                  <th className="p-4 text-right">Ongkir</th>
+                  <th className="p-4 text-right">Bill Penerima</th>
+                  <th className="p-4 text-center">Status Pay</th>
                   <th className="p-4 text-center">Settlement</th>
                   <th className="p-4 text-center">Adjustment</th>
                   <th className="p-4 text-center w-16">Aksi</th>
@@ -613,189 +684,145 @@ export function PaymentView() {
             </table>
           </div>
         )}
-
-        {/* Database Pagination */}
-        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 font-mono">
-          <div>
-            Menampilkan Halaman <strong className="text-white">{pagination.page}</strong> dari{' '}
-            <strong className="text-white">{pagination.totalPages}</strong> (Total {pagination.totalResi} Resi)
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              disabled={pagination.page <= 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg border border-slate-700 disabled:opacity-30"
-            >
-              Sebelumnya
-            </button>
-
-            <button
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg border border-slate-700 disabled:opacity-30"
-            >
-              Selanjutnya
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* Adjustment Modal */}
+      {/* Adjustment Form Modal */}
       {isAdjModalOpen && targetItem && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-emerald-400" />
-                <span>{isEditMode ? 'EDIT ADJUSTMENT PAYMENT' : 'ADJUSTMENT PAYMENT'}</span>
-              </h3>
-              <button onClick={() => setIsAdjModalOpen(false)} className="text-slate-400 hover:text-white">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-emerald-400" />
+                  <span>{isEditMode ? 'Edit Adjustment Payment' : 'Form Adjustment Payment'}</span>
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Resi: <strong className="text-sky-400 font-mono">{targetItem.resiNumber}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAdjModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Read-Only Current Resi Details */}
-            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 space-y-1.5 text-xs text-slate-300">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Nomor Resi:</span>
-                <span className="font-mono font-bold text-sky-400">{targetItem.resiNumber}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Pengirim / Penerima:</span>
-                <span className="font-bold text-white truncate max-w-[200px]">
-                  {targetItem.senderName} → {targetItem.recipientName}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Area & Berat:</span>
-                <span>{targetItem.area} ({targetItem.weightKg} kg)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Layanan & Status Saat Ini:</span>
-                <span className="font-bold text-amber-300">
-                  {targetItem.paymentDeliveryMethod} ({targetItem.paymentStatus})
-                </span>
-              </div>
-            </div>
-
             <form onSubmit={handleSubmitAdjustment} className="space-y-4 text-xs">
-              {/* Service Method Selection */}
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Metode Layanan *</label>
+                <label className="block text-slate-400 font-semibold mb-1">Metode Delivery Service</label>
                 <select
                   value={formService}
-                  onChange={(e) => setFormService(e.target.value as 'DFOD' | 'COD')}
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold"
+                  onChange={(e) => setFormService(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
                 >
-                  <option value="DFOD">DFOD (Delivery Fee on Delivery)</option>
-                  <option value="COD">COD (Cash on Delivery)</option>
+                  <option value="DFOD">DFOD (Ongkir dibayar Penerima)</option>
+                  <option value="COD">COD (Ongkir + Barang dibayar Penerima)</option>
                 </select>
               </div>
 
-              {/* Revised Shipping Fee */}
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Revisi Ongkir (HDL Logistik Revenue) *
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  required
-                  value={formShippingFee}
-                  onChange={(e) => setFormShippingFee(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 font-mono font-bold text-sm"
-                />
-              </div>
-
-              {/* COD Amount (If Service = COD) */}
-              {formService === 'COD' && (
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-amber-400 mb-1">
-                    Nominal COD Barang (Titipan Pengirim - Bukan Revenue) *
-                  </label>
+                  <label className="block text-slate-400 font-semibold mb-1">Nominal Ongkir (Rp)</label>
                   <input
                     type="number"
-                    min="0"
+                    value={formShippingFee}
+                    onChange={(e) => setFormShippingFee(e.target.value)}
                     required
-                    value={formCodAmount}
-                    onChange={(e) => setFormCodAmount(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-amber-300 font-mono font-bold text-sm"
+                    min={0}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none"
                   />
                 </div>
-              )}
 
-              {/* Settlement Payment Method */}
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Metode Pembayaran Settlement *
-                </label>
-                <select
-                  value={formSettlementMethod}
-                  onChange={(e) => setFormSettlementMethod(e.target.value as 'CASH' | 'TRANSFER')}
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-bold"
-                >
-                  <option value="CASH">CASH (Tunai)</option>
-                  <option value="TRANSFER">TRANSFER (Rekening Bank)</option>
-                </select>
+                <div>
+                  <label className="block text-slate-400 font-semibold mb-1">Nominal COD Barang (Rp)</label>
+                  <input
+                    type="number"
+                    value={formCodAmount}
+                    onChange={(e) => setFormCodAmount(e.target.value)}
+                    disabled={formService !== 'COD'}
+                    placeholder={formService === 'COD' ? '0' : 'Tidak berlaku'}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono focus:ring-2 focus:ring-sky-500 focus:outline-none disabled:opacity-30 disabled:cursor-not-allowed"
+                  />
+                </div>
               </div>
 
-              {/* Transfer Proof Upload (If TRANSFER) */}
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">Metode Settlement</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormSettlementMethod('CASH')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      formSettlementMethod === 'CASH'
+                        ? 'bg-emerald-950 border-emerald-700 text-emerald-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-900'
+                    }`}
+                  >
+                    <span>CASH</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormSettlementMethod('TRANSFER')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      formSettlementMethod === 'TRANSFER'
+                        ? 'bg-indigo-950 border-indigo-700 text-indigo-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-900'
+                    }`}
+                  >
+                    <span>TRANSFER (Upload Bukti)</span>
+                  </button>
+                </div>
+              </div>
+
               {formSettlementMethod === 'TRANSFER' && (
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">
-                    Bukti Transfer (Screenshot/Foto) - OPTIONAL
+                  <label className="block text-slate-400 font-semibold mb-1">
+                    Upload Bukti Transfer (JPG/PNG/WEBP max 5MB)
                   </label>
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
-                    onChange={handleFileChange}
-                    className="w-full text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-sky-400 hover:file:bg-slate-700"
+                    onChange={handleFileSelect}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700"
                   />
                   {filePreviewUrl && (
-                    <div className="mt-2 p-2 bg-slate-950 border border-slate-800 rounded-xl flex items-center gap-3">
+                    <div className="mt-2 relative w-24 h-24 rounded-lg overflow-hidden border border-slate-800">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={filePreviewUrl}
-                        alt="Preview Bukti"
-                        className="w-12 h-12 object-cover rounded-lg"
-                      />
-                      <span className="text-[10px] text-slate-400 font-mono truncate">
-                        {selectedFile?.name}
-                      </span>
+                      <img src={filePreviewUrl} alt="Preview Bukti" className="object-cover w-full h-full" />
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Reason */}
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Alasan / Catatan *</label>
-                <input
-                  type="text"
-                  required
+                <label className="block text-slate-400 font-semibold mb-1">Catatan / Alasan Adjustment</label>
+                <textarea
                   value={formReason}
                   onChange={(e) => setFormReason(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white"
+                  required
+                  rows={2}
+                  placeholder="Ketik catatan atau alasan adjustment..."
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:ring-2 focus:ring-sky-500 focus:outline-none"
                 />
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsAdjModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 disabled:opacity-50 flex items-center gap-2"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg transition flex items-center gap-2 disabled:opacity-50"
                 >
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin text-white" />}
-                  <span>{isEditMode ? 'Simpan Koreksi' : 'Simpan Adjustment'}</span>
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>{isEditMode ? 'Update Adjustment' : 'Simpan Adjustment'}</span>
                 </button>
               </div>
             </form>
@@ -803,149 +830,110 @@ export function PaymentView() {
         </div>
       )}
 
-      {/* History Timeline Modal */}
+      {/* History Modal */}
       {isHistoryModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <History className="w-5 h-5 text-sky-400" />
-                <span>Riwayat Timeline Adjustment</span>
-              </h3>
-              <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-white">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <History className="w-5 h-5 text-sky-400" />
+                  <span>Timeline & History Adjustment Resi</span>
+                </h2>
+                {historyData && (
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Resi: <strong className="text-sky-400 font-mono">{historyData.manifest.resiNumber}</strong>
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {loadingHistory ? (
-              <div className="p-8 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
-                <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
-                <span>Memuat riwayat adjustment...</span>
+              <div className="p-12 text-center text-slate-400 flex items-center justify-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-sky-400" />
+                <span className="text-xs font-semibold">Memuat history adjustment...</span>
               </div>
             ) : historyData ? (
-              <div className="space-y-4 text-xs">
-                {/* Initial Resi State */}
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 font-mono text-slate-300">
-                  <div className="text-[10px] uppercase font-bold text-sky-400">
-                    Awal Pembuatan Resi ({historyData.manifest.resiNumber})
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                {/* Initial State */}
+                <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
+                  <div className="text-[10px] text-slate-500 font-mono uppercase font-bold">Data Awal Manifest</div>
+                  <div className="font-semibold text-slate-300">
+                    Layanan: <strong className="text-white">{historyData.manifest.initialDeliveryMethod}</strong> •
+                    Ongkir: <strong className="text-emerald-400 font-mono">Rp {historyData.manifest.initialShippingFee.toLocaleString('id-ID')}</strong> •
+                    COD: <strong className="text-amber-400 font-mono">Rp {historyData.manifest.initialCodAmount.toLocaleString('id-ID')}</strong>
                   </div>
-                  <div>Metode Layanan: {historyData.manifest.initialDeliveryMethod}</div>
-                  <div>Ongkir Awal: Rp {historyData.manifest.initialShippingFee.toLocaleString('id-ID')}</div>
                 </div>
 
                 {/* Adjustments Timeline */}
-                <div className="space-y-3 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
-                  {historyData.adjustments.map((a, idx) => (
-                    <div key={a.id} className="relative pl-8 space-y-1">
-                      <div className="absolute left-1.5 top-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-900" />
+                <div className="space-y-3">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Riwayat Adjustment</div>
+                  {historyData.adjustments.map((adj) => (
+                    <div key={adj.id} className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800/80 text-xs space-y-2">
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono border-b border-slate-800/60 pb-1.5">
+                        <span>{new Date(adj.createdAt).toLocaleString('id-ID')}</span>
+                        <span className="text-sky-400 font-bold">{adj.correctedByName} ({adj.correctedByRole})</span>
+                      </div>
 
-                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-slate-200">
-                        <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono mb-1">
-                          <span>
-                            Adjustment #{idx + 1} oleh {a.correctedByName} ({a.correctedByRole})
-                          </span>
-                          <span>{new Date(a.createdAt).toLocaleString('id-ID')}</span>
+                      <div className="grid grid-cols-2 gap-2 text-slate-300">
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">Sebelum:</span>
+                          <span>{adj.previousDeliveryMethod || '-'} • Rp {adj.previousShippingFee?.toLocaleString('id-ID') || 0}</span>
                         </div>
-
-                        <div className="space-y-0.5 font-mono">
-                          <div>
-                            Layanan: <span className="text-slate-400">{a.previousDeliveryMethod}</span>{' '}
-                            → <strong className="text-emerald-400">{a.newDeliveryMethod}</strong>
-                          </div>
-                          <div>
-                            Ongkir: Rp {a.previousShippingFee?.toLocaleString('id-ID')} →{' '}
-                            <strong className="text-emerald-400">
-                              Rp {a.newShippingFee?.toLocaleString('id-ID')}
-                            </strong>
-                          </div>
-                          <div>Settlement: {a.settlementMethod}</div>
-                          <div className="text-slate-400">Catatan: {a.reason}</div>
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">Sesudah:</span>
+                          <span className="text-emerald-400 font-semibold">{adj.newDeliveryMethod || '-'} • Rp {adj.newShippingFee?.toLocaleString('id-ID') || 0}</span>
                         </div>
+                      </div>
 
-                        {a.transferProofObjectKey && (
-                          <div className="mt-2 pt-2 border-t border-slate-800 flex justify-between items-center">
-                            <span className="text-[10px] text-slate-400 font-mono">Bukti Transfer (R2 Object Key)</span>
-                            <button
-                              onClick={() => handleViewProof(a.id)}
-                              className="px-2.5 py-1 bg-sky-950 text-sky-400 border border-sky-800 rounded-lg text-[10px] font-bold hover:bg-sky-900 flex items-center gap-1"
-                            >
-                              <ImageIcon className="w-3 h-3" />
-                              <span>Lihat Bukti</span>
-                            </button>
-                          </div>
-                        )}
+                      <div className="text-[11px] text-slate-300 bg-slate-900/80 p-2 rounded-lg border border-slate-800/40">
+                        <strong>Alasan:</strong> {adj.reason}
                       </div>
-                    </div>
-                  ))}
-                </div>
 
-                {/* Transactions Status */}
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
-                  <div className="text-[10px] uppercase font-bold text-slate-400">
-                    Status Transaksi Keuangan Ledger
-                  </div>
-                  {historyData.transactions.map((t) => (
-                    <div key={t.id} className="flex justify-between items-center font-mono text-[11px]">
-                      <div>
-                        Rp {t.amount.toLocaleString('id-ID')} ({t.method})
-                      </div>
-                      <div>
-                        {t.status === 'POSTED' ? (
-                          <span className="px-2 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded text-[10px] font-bold">
-                            POSTED
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 bg-red-950 text-red-400 border border-red-800 rounded text-[10px] font-bold">
-                            VOID ({t.voidReason || 'Koreksi'})
-                          </span>
-                        )}
-                      </div>
+                      {adj.transferProofObjectKey && (
+                        <button
+                          type="button"
+                          onClick={() => handleViewProof(adj.id)}
+                          className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>Lihat Bukti Transfer</span>
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             ) : null}
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setIsHistoryModalOpen(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs"
-              >
-                Tutup
-              </button>
-            </div>
           </div>
         </div>
       )}
 
-      {/* Proof Viewing Modal */}
+      {/* Proof View Modal */}
       {viewingProofUrl && (
-        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative text-center">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-sky-400" />
-                <span>Bukti Transfer (Presigned Private R2 URL)</span>
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-4 space-y-3 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h3 className="text-xs font-bold text-white flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-indigo-400" />
+                <span>Bukti Transfer Settlement</span>
               </h3>
-              <button onClick={() => setViewingProofUrl(null)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={viewingProofUrl}
-              alt="Bukti Transfer R2"
-              className="max-h-[400px] mx-auto rounded-xl border border-slate-800 object-contain"
-            />
-
-            <div className="pt-2">
               <button
                 onClick={() => setViewingProofUrl(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs"
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
               >
-                Tutup Preview
+                <X className="w-4 h-4" />
               </button>
+            </div>
+            <div className="relative max-h-[70vh] rounded-xl overflow-hidden border border-slate-800">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={viewingProofUrl} alt="Bukti Transfer" className="object-contain w-full h-full max-h-[70vh]" />
             </div>
           </div>
         </div>

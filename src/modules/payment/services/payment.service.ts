@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@/generated/prisma/client';
-import { getAsiaJakartaRangeBoundary } from '@/modules/finance/services/operational-settlement.service';
+import { getTodayJakartaStr } from '@/modules/manifest/utils/date-utils';
 import { uploadProofToR2, validateProofFile, generateProofObjectKey } from '@/lib/storage/r2';
 
 export interface PaymentListFilters {
@@ -67,14 +67,31 @@ export async function getPaymentListService(filters: PaymentListFilters) {
     const limit = filters.limit && filters.limit > 0 ? filters.limit : 25;
     const skip = (page - 1) * limit;
 
-    const { sDate, eDate, startUtc, endUtc } = getAsiaJakartaRangeBoundary(
-      filters.startDate,
-      filters.endDate
-    );
+    const today = getTodayJakartaStr();
+    const sDate =
+      filters.startDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate)
+        ? filters.startDate
+        : filters.endDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate)
+        ? filters.endDate
+        : today;
+    const eDate =
+      filters.endDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate)
+        ? filters.endDate
+        : sDate;
 
-    // Build base filter
+    if (sDate > eDate) {
+      return {
+        success: false,
+        error: 'Tanggal awal tidak boleh melebihi tanggal akhir.',
+      };
+    }
+
+    const startDbDate = new Date(`${sDate}T00:00:00.000Z`);
+    const endDbDate = new Date(`${eDate}T00:00:00.000Z`);
+
+    // Build base filter matching canonical Manifest.date (@db.Date)
     const whereCondition: Prisma.ManifestWhereInput = {
-      date: { gte: startUtc, lte: endUtc },
+      date: { gte: startDbDate, lte: endDbDate },
       status: { not: 'VOID' },
     };
 
