@@ -12,6 +12,8 @@ import {
   ArrowDownRight,
   BarChart3,
   Award,
+  UserCheck,
+  Wallet,
 } from 'lucide-react';
 import { CategoryBreakdownItem } from '@/modules/finance/services/cashflow.service';
 
@@ -23,6 +25,10 @@ interface CashflowSummary {
   salaryExpense: number;
   operatingProfit: number;
   isProfit: boolean;
+  kasbonDisbursement: number;
+  paidSalaryPayout: number;
+  totalCashInflow: number;
+  totalCashOutflow: number;
   netCashMovement: number;
 }
 
@@ -50,6 +56,10 @@ export function CashflowView() {
     salaryExpense: 0,
     operatingProfit: 0,
     isProfit: true,
+    kasbonDisbursement: 0,
+    paidSalaryPayout: 0,
+    totalCashInflow: 0,
+    totalCashOutflow: 0,
     netCashMovement: 0,
   });
 
@@ -124,7 +134,7 @@ export function CashflowView() {
             <span>Cashflow & Laba Rugi</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Pantau omzet, biaya operasional, biaya team, dan laba rugi.
+            Pantau omzet, biaya operasional, kasbon karyawan, dan pergerakan kas bersih.
           </p>
         </div>
 
@@ -241,10 +251,34 @@ export function CashflowView() {
         </div>
       </div>
 
+      {/* Secondary Informational Card: Kasbon Karyawan */}
+      <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-amber-950/60 text-amber-400 rounded-xl border border-amber-800/40 shrink-0">
+            <UserCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase font-bold text-slate-400">Kasbon Karyawan (Cash Out)</div>
+            <div className="text-lg font-bold font-mono text-amber-300">
+              Rp {summary.kasbonDisbursement.toLocaleString('id-ID')}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] px-2.5 py-1 bg-amber-950 text-amber-300 border border-amber-800/60 rounded-lg font-semibold">
+            Piutang Karyawan (Bukan Beban Operasional)
+          </span>
+          <p className="text-[10px] text-slate-400 hidden sm:block">
+            Mempengaruhi pergerakan kas bersih, tidak mengurangi Laba Operasional.
+          </p>
+        </div>
+      </div>
+
       {/* Expense Ranking & Net Cash Movement */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Top Pengeluaran Ranking */}
-        <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-sky-400" />
@@ -292,26 +326,50 @@ export function CashflowView() {
         </div>
 
         {/* Net Cash Movement Card */}
-        <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 flex flex-col justify-between">
+        <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 flex flex-col justify-between">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3 mb-4">
               <PieChart className="w-4 h-4 text-emerald-400" />
-              <span>Net Cash Movement</span>
+              <span>Pergerakan Arus Kas (Net Cash Movement)</span>
             </h3>
 
             <div className="space-y-3 text-xs">
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center">
-                <span className="text-slate-400">Arus Kas Masuk (Real Inflow):</span>
-                <span className="font-mono font-bold text-emerald-400">
-                  Rp {summary.revenue.toLocaleString('id-ID')}
-                </span>
+              {/* INFLOW */}
+              <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800/60 pb-1">
+                  Arus Kas Masuk (Inflow)
+                </div>
+                <div className="flex justify-between items-center text-slate-300">
+                  <span>• Revenue / Real Inflow:</span>
+                  <span className="font-mono font-bold text-emerald-400">
+                    Rp {summary.totalCashInflow.toLocaleString('id-ID')}
+                  </span>
+                </div>
               </div>
 
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center">
-                <span className="text-slate-400">Arus Kas Keluar Operasional:</span>
-                <span className="font-mono font-bold text-amber-300">
-                  Rp {summary.operationalExpense.toLocaleString('id-ID')}
-                </span>
+              {/* OUTFLOW */}
+              <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800/60 pb-1">
+                  Arus Kas Keluar (Outflow)
+                </div>
+                <div className="flex justify-between items-center text-slate-300">
+                  <span>• Operasional Fleet & Gudang:</span>
+                  <span className="font-mono text-amber-300">
+                    Rp {summary.operationalExpense.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-300">
+                  <span>• Kasbon Karyawan (Driver / Helper):</span>
+                  <span className="font-mono text-amber-400 font-semibold">
+                    Rp {summary.kasbonDisbursement.toLocaleString('id-ID')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-300">
+                  <span>• Pembayaran Kas Gaji (Net Payout):</span>
+                  <span className="font-mono text-indigo-300">
+                    Rp {summary.paidSalaryPayout.toLocaleString('id-ID')}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -320,8 +378,11 @@ export function CashflowView() {
             <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">
               Bersih Pergerakan Kas (Net Cash)
             </div>
-            <div className="text-xl font-bold font-mono text-white">
+            <div className="text-2xl font-bold font-mono text-white">
               Rp {summary.netCashMovement.toLocaleString('id-ID')}
+            </div>
+            <div className="text-[9px] text-slate-500 font-mono mt-1 leading-relaxed">
+              Kas Masuk (Rp {summary.totalCashInflow.toLocaleString('id-ID')}) - OpEx (Rp {summary.operationalExpense.toLocaleString('id-ID')}) - Kasbon (Rp {summary.kasbonDisbursement.toLocaleString('id-ID')}) - Gaji (Rp {summary.paidSalaryPayout.toLocaleString('id-ID')})
             </div>
           </div>
         </div>

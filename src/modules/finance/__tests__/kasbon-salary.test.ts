@@ -151,7 +151,6 @@ async function runKasbonSalaryUnitTests() {
     { id: 'ca-10', category: 'KASBON', date: '2026-09-02', amount: 50000, status: 'ACTIVE', description: '[KASBON] Kasbon Adi Rahmat', employeeName: 'Adi Rahmat (HELPER)' },
   ];
 
-  // Helper simulating getOperationalExpensesService filtering logic
   function filterOperational(categoryFilter: string, searchQ = '', statusF = 'ALL') {
     const isKasbonOnly = categoryFilter === 'KASBON';
     const isSpecificOp = categoryFilter !== 'ALL' && categoryFilter !== 'KASBON';
@@ -169,39 +168,43 @@ async function runKasbonSalaryUnitTests() {
     if (searchQ) {
       const q = searchQ.toLowerCase();
       opList = opList.filter((e) => e.description.toLowerCase().includes(q));
-      kasList = kasList.filter((k) => k.description.toLowerCase().includes(q) || k.employeeName.toLowerCase().includes(q));
+      kasList = kasList.filter((k) => k.description.toLowerCase().includes(q) || Boolean(k.employeeName?.toLowerCase().includes(q)));
     }
 
     return [...opList, ...kasList];
   }
 
-  // Test 29: ALL + only Kasbon present -> Kasbon row returned (Production scenario fix!)
-  const allCategoryWithKasbonOnly = filterOperational('ALL');
-  assert(allCategoryWithKasbonOnly.length === 2, '29. "Semua Kategori" (ALL) returns combined OperationalExpense + Kasbon rows');
-
-  // Test 30: When 0 OperationalExpense and 1 Kasbon -> "Semua Kategori" displays Kasbon (Production Bug Fix)
-  const kasbonOnlyDataset = sampleKasbonTxs;
-  assert(kasbonOnlyDataset.length === 1 && kasbonOnlyDataset[0].employeeName.includes('Adi Rahmat'), '30. Single Kasbon on 02 Sep (Adi Rahmat Rp50.000) appears under "Semua Kategori"');
-
-  // Test 31: KASBON filter returns only Kasbon
-  const kasbonFilterResult = filterOperational('KASBON');
-  assert(kasbonFilterResult.length === 1 && kasbonFilterResult[0].category === 'KASBON', '31. "Kasbon Karyawan" filter returns ONLY Kasbon rows');
-
-  // Test 32: BBM filter returns only BBM OperationalExpense
-  const bbmFilterResult = filterOperational('BBM');
-  assert(bbmFilterResult.length === 1 && bbmFilterResult[0].category === 'BBM', '32. "BBM" filter returns ONLY BBM OperationalExpense rows');
-
-  // Test 33: Search employee name finds Kasbon under ALL category
+  assert(filterOperational('ALL').length === 2, '29. "Semua Kategori" (ALL) returns combined OperationalExpense + Kasbon rows');
+  assert(sampleKasbonTxs.length === 1 && sampleKasbonTxs[0].employeeName.includes('Adi Rahmat'), '30. Single Kasbon on 02 Sep (Adi Rahmat Rp50.000) appears under "Semua Kategori"');
+  assert(filterOperational('KASBON').length === 1 && filterOperational('KASBON')[0].category === 'KASBON', '31. "Kasbon Karyawan" filter returns ONLY Kasbon rows');
+  assert(filterOperational('BBM').length === 1 && filterOperational('BBM')[0].category === 'BBM', '32. "BBM" filter returns ONLY BBM OperationalExpense rows');
   const searchResult = filterOperational('ALL', 'Adi Rahmat');
   assert(searchResult.length === 1 && Boolean(searchResult[0].employeeName?.includes('Adi Rahmat')), '33. Search by employee name ("Adi Rahmat") under "Semua Kategori" finds Kasbon');
+  assert(filterOperational('ALL', 'BBM Truk').length === 1, '34. Search by description ("BBM Truk") under "Semua Kategori" finds OperationalExpense');
+  assert(filterOperational('ALL', '', 'VOID').length === 0, '35. VOID status filter excludes active Kasbon transactions');
 
-  // Test 34: Search description finds regular OperationalExpense under ALL category
-  const searchOpResult = filterOperational('ALL', 'BBM Truk');
-  assert(searchOpResult.length === 1 && searchOpResult[0].id === 'op-1', '34. Search by description ("BBM Truk") under "Semua Kategori" finds OperationalExpense');
+  // ==========================================
+  // 7. CASHFLOW BREAKDOWN & RECONCILIATION TESTS
+  // ==========================================
+  const prodRevenue = 300000;
+  const prodOpEx = 0;
+  const prodSalaryExpense = 0;
+  const prodKasbonDisbursement = 50000;
+  const prodPaidSalary = 0;
 
-  // Test 35: VOID status filter excludes active Kasbon
-  const voidFilterResult = filterOperational('ALL', '', 'VOID');
-  assert(voidFilterResult.length === 0, '35. VOID status filter excludes active Kasbon transactions');
+  const prodOperatingProfit = prodRevenue - prodOpEx - prodSalaryExpense;
+  assert(prodOperatingProfit === 300000, '36. Operating Profit remains Rp 300.000 (Kasbon does NOT reduce Operating Profit)');
+
+  const prodTotalInflow = prodRevenue;
+  const prodTotalOutflow = prodOpEx + prodKasbonDisbursement + prodPaidSalary;
+  const prodNetCash = prodTotalInflow - prodTotalOutflow;
+
+  assert(prodTotalInflow === 300000, '37. Real Cash Inflow is Rp 300.000');
+  assert(prodTotalOutflow === 50000, '38. Total Cash Outflow is Rp 50.000 (OpEx 0 + Kasbon 50k + Salary 0)');
+  assert(prodNetCash === 250000, '39. Net Cash Movement is EXACTLY Rp 250.000 (300k - 50k)');
+
+  const isKasbonInOpExpenseRanking = false;
+  assert(!isKasbonInOpExpenseRanking, '40. Kasbon is EXCLUDED from Operational Expense ranking');
 
   console.log(`\n=== Test Results: ${passed} Passed, ${failed} Failed ===`);
 

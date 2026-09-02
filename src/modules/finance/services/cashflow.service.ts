@@ -132,7 +132,7 @@ export async function getCashflowService(filters: CashflowFilters) {
 
     const netCashMovementDec = totalCashInflowDec.sub(totalCashOutflowDec);
 
-    // 7. EXPENSE CATEGORY RANKING
+    // 7. EXPENSE CATEGORY RANKING (Operational Expense Only)
     const catMap = new Map<string, Prisma.Decimal>();
     for (const e of activeExpenses) {
       const current = catMap.get(e.category) || new Prisma.Decimal(0);
@@ -164,6 +164,10 @@ export async function getCashflowService(filters: CashflowFilters) {
         salaryExpense: totalSalaryExpenseDec.toNumber(),
         operatingProfit: operatingProfitDec.toNumber(),
         isProfit: operatingProfitDec.gte(0),
+        kasbonDisbursement: disbursementsDec.toNumber(),
+        paidSalaryPayout: paidSalaryDec.toNumber(),
+        totalCashInflow: totalCashInflowDec.toNumber(),
+        totalCashOutflow: totalCashOutflowDec.toNumber(),
         netCashMovement: netCashMovementDec.toNumber(),
       },
       categoryBreakdown,
