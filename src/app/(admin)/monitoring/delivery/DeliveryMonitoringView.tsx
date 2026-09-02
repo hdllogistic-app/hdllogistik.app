@@ -120,10 +120,13 @@ export function DeliveryMonitoringView() {
 
   // Date Quick Navigation Helpers
   const handleOffsetDate = (offsetDays: number) => {
-    const current = new Date(`${dateStr}T00:00:00+07:00`);
-    current.setDate(current.getDate() + offsetDays);
-    const newDateStr = current.toISOString().split('T')[0];
-    setDateStr(newDateStr);
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dateObj = new Date(Date.UTC(y, m - 1, d + offsetDays));
+    const newY = dateObj.getUTCFullYear();
+    const newM = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+    const newD = String(dateObj.getUTCDate()).padStart(2, '0');
+    setDateStr(`${newY}-${newM}-${newD}`);
   };
 
   const handleResetToToday = () => {

@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@/generated/prisma/client';
 
 export interface DeliveryMonitoringFilters {
   date?: string; // YYYY-MM-DD in Asia/Jakarta
@@ -80,8 +79,13 @@ export function getAsiaJakartaDateBoundary(dateStr?: string): {
   if (!targetDate || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
     // Current Asia/Jakarta date
     const now = new Date();
-    const jakartaDate = new Date(now.getTime() + 7 * 60 * 60 * 1000);
-    targetDate = jakartaDate.toISOString().split('T')[0];
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    targetDate = formatter.format(now);
   }
 
   // 00:00:00.000 +07:00 -> Subtract 7 hours for UTC
@@ -93,6 +97,7 @@ export function getAsiaJakartaDateBoundary(dateStr?: string): {
 
 /**
  * Service to aggregate daily delivery, TTD, pending, and achievement per driver team.
+ * Scoped strictly by operational attempt start date (DeliveryAssignment.assignedAt in Asia/Jakarta bounds).
  */
 export async function getDeliveryMonitoringService(
   filters: DeliveryMonitoringFilters
@@ -100,11 +105,10 @@ export async function getDeliveryMonitoringService(
   try {
     const { dateStr, startUtc, endUtc } = getAsiaJakartaDateBoundary(filters.date);
 
-    // Query active DeliveryAssignments for business date, taking latest assignment per delivery
+    // Query DeliveryAssignments assigned on target operational date (assignedAt in [startUtc, endUtc])
     const assignments = await prisma.deliveryAssignment.findMany({
       where: {
-        assignedAt: { lte: endUtc },
-        OR: [{ unassignedAt: null }, { unassignedAt: { gte: startUtc } }],
+        assignedAt: { gte: startUtc, lte: endUtc },
         delivery: {
           status: { notIn: ['CANCELLED'] },
           manifest: { status: { notIn: ['VOID'] } },
@@ -134,7 +138,7 @@ export async function getDeliveryMonitoringService(
       orderBy: { assignedAt: 'desc' },
     });
 
-    // Deduplicate: Each Delivery ID is attributed ONLY to its latest active assignment
+    // Deduplicate: Each Delivery ID is attributed ONLY to its latest assignment on that operational day
     const seenDeliveryIds = new Set<string>();
     const teamMap = new Map<
       string,
@@ -167,7 +171,7 @@ export async function getDeliveryMonitoringService(
       const teamData = teamMap.get(driver.id)!;
       teamData.totalDelivery += 1;
 
-      // TTD Proof Check: Valid DeliveryProof record exists
+      // TTD Proof Check: Valid DeliveryProof record exists for this delivery
       if (a.delivery.proof !== null) {
         teamData.totalTtd += 1;
       }
@@ -192,7 +196,7 @@ export async function getDeliveryMonitoringService(
       };
     });
 
-    // Default Sorting: Total Pending DESC
+    // Default Sorting: Total Pending DESC, then Total Delivery DESC
     teams.sort((a, b) => b.totalPending - a.totalPending || b.totalDelivery - a.totalDelivery);
 
     // Compute Overall Summary
@@ -228,7 +232,7 @@ export async function getDeliveryMonitoringService(
 }
 
 /**
- * Service to query paginated detail delivery records for a specific driver team.
+ * Service to query paginated detail delivery records for a specific driver team on a target operational attempt date.
  */
 export async function getDetailDeliveryMonitoringService(
   employeeId: string,
@@ -261,8 +265,7 @@ export async function getDetailDeliveryMonitoringService(
     const assignments = await prisma.deliveryAssignment.findMany({
       where: {
         driverId: employeeId,
-        assignedAt: { lte: endUtc },
-        OR: [{ unassignedAt: null }, { unassignedAt: { gte: startUtc } }],
+        assignedAt: { gte: startUtc, lte: endUtc },
         delivery: {
           status: { notIn: ['CANCELLED'] },
           manifest: { status: { notIn: ['VOID'] } },
@@ -280,7 +283,7 @@ export async function getDetailDeliveryMonitoringService(
       orderBy: { assignedAt: 'desc' },
     });
 
-    // Deduplicate latest assignment per delivery
+    // Deduplicate latest assignment per delivery for this driver on this operational date
     const seenDeliveryIds = new Set<string>();
     const eligibleDeliveries: DetailDeliveryItemDTO[] = [];
 
@@ -311,9 +314,9 @@ export async function getDetailDeliveryMonitoringService(
       });
     }
 
-    // Total counts summary
+    // Total counts summary matching operational date
     const totalDelivery = seenDeliveryIds.size;
-    const totalTtd = assignments.filter((a) => a.delivery.proof !== null).length;
+    const totalTtd = eligibleDeliveries.filter((d) => d.ttdStatus === 'TTD').length;
     const totalPending = Math.max(0, totalDelivery - totalTtd);
 
     const safePage = Math.max(1, page);
@@ -349,9 +352,9 @@ export async function getDetailDeliveryMonitoringService(
       employeeCode: '',
       dateStr: dateStr || '',
       summary: { totalDelivery: 0, totalTtd: 0, totalPending: 0 },
-      pagination: { totalItems: 0, totalPages: 1, currentPage: 1, limit },
+      pagination: { totalItems: 0, totalPages: 1, currentPage: 1, limit: 25 },
       deliveries: [],
-      error: 'Detail data delivery gagal dimuat.',
+      error: 'Data detail delivery gagal dimuat. Silakan coba kembali.',
     };
   }
 }

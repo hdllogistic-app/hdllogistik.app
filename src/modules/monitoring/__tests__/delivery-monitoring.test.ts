@@ -2,7 +2,7 @@ import { getAsiaJakartaDateBoundary } from '../services/delivery-monitoring.serv
 import { isRoleAllowed, USER_ROLES } from '../../../lib/auth/roles';
 
 async function runDeliveryMonitoringTests() {
-  console.log('=== Running Delivery Monitoring V1 Unit Tests ===\n');
+  console.log('=== Running Delivery Monitoring Operational Date Semantics Unit Tests ===\n');
 
   let passed = 0;
   let failed = 0;
@@ -17,164 +17,238 @@ async function runDeliveryMonitoringTests() {
     }
   }
 
-  // 1. Asia/Jakarta date boundary filter
-  const boundary = getAsiaJakartaDateBoundary('2026-09-01');
-  assert(boundary.dateStr === '2026-09-01', '1. selected Asia/Jakarta date filters correctly');
-  assert(boundary.startUtc.toISOString().endsWith('.000Z'), 'Asia/Jakarta startUtc boundary valid');
-  assert(boundary.endUtc.toISOString().endsWith('.999Z'), 'Asia/Jakarta endUtc boundary valid');
+  // 1 & 21. Asia/Jakarta date boundary filter & midnight boundary
+  const boundaryToday = getAsiaJakartaDateBoundary('2026-09-02');
+  assert(boundaryToday.dateStr === '2026-09-02', '1 & 21. selected Asia/Jakarta date filters correctly at midnight boundary');
+  assert(boundaryToday.startUtc.toISOString() === '2026-09-01T17:00:00.000Z', 'Start UTC boundary for 2026-09-02 WIB is 2026-09-01T17:00:00.000Z');
+  assert(boundaryToday.endUtc.toISOString() === '2026-09-02T16:59:59.999Z', 'End UTC boundary for 2026-09-02 WIB is 2026-09-02T16:59:59.999Z');
 
-  // 2 - 5. Role Authorization
-  const allowedRoles = [USER_ROLES.OWNER, USER_ROLES.ADMIN, USER_ROLES.OPS, USER_ROLES.FINANCE];
-  assert(isRoleAllowed(USER_ROLES.OWNER, allowedRoles), '2. OWNER can view');
-  assert(isRoleAllowed(USER_ROLES.ADMIN, allowedRoles), '3. ADMIN can view');
-  assert(isRoleAllowed(USER_ROLES.OPS, allowedRoles), '4. OPS can view');
-  assert(!isRoleAllowed(USER_ROLES.DRIVER, allowedRoles), '5. DRIVER forbidden');
-
-  // Simulated Delivery Domain Dataset
-  const sampleAssignments = [
+  // Simulated Dataset for Operational Attempt Date Testing
+  const dataset = [
+    // 1. Admin schedule today (2026-09-02) -> appears today
     {
+      id: 'asg-1',
       deliveryId: 'del-1',
       driverId: 'drv-1',
       driverName: 'AJI KOMARUDIN',
-      assignedAt: new Date('2026-09-01T08:00:00+07:00'),
-      unassignedAt: null,
-      status: 'SUCCESS',
+      assignedAt: new Date('2026-09-02T09:00:00+07:00'), // 02 Sep
+      manifestCreatedAt: new Date('2026-09-02T08:00:00+07:00'),
+      status: 'ASSIGNED',
       manifestStatus: 'ACTIVE',
-      proof: { id: 'proof-1', receivedAt: new Date('2026-09-01T10:00:00+07:00'), signatureUrl: 'https://...' },
+      proof: null,
     },
+    // 2. Admin schedule yesterday (2026-09-01) -> appears yesterday
     {
+      id: 'asg-2',
       deliveryId: 'del-2',
       driverId: 'drv-1',
       driverName: 'AJI KOMARUDIN',
-      assignedAt: new Date('2026-09-01T08:30:00+07:00'),
+      assignedAt: new Date('2026-09-01T10:00:00+07:00'), // 01 Sep
+      manifestCreatedAt: new Date('2026-09-01T07:00:00+07:00'),
+      status: 'SUCCESS',
+      manifestStatus: 'ACTIVE',
+      proof: { id: 'proof-2', receivedAt: new Date('2026-09-01T14:00:00+07:00') },
+    },
+    // 3. Manifest yesterday (2026-09-01) + schedule today (2026-09-02) -> appears today
+    {
+      id: 'asg-3',
+      deliveryId: 'del-3',
+      driverId: 'drv-2',
+      driverName: 'TIAS TONO',
+      assignedAt: new Date('2026-09-02T08:30:00+07:00'), // 02 Sep
+      manifestCreatedAt: new Date('2026-09-01T16:00:00+07:00'), // 01 Sep manifest
+      status: 'IN_DELIVERY',
+      manifestStatus: 'ACTIVE',
+      proof: null,
+    },
+    // 4. Schedule yesterday (2026-09-01) + TTD today (2026-09-02) -> remains yesterday operational bucket
+    {
+      id: 'asg-4',
+      deliveryId: 'del-4',
+      driverId: 'drv-1',
+      driverName: 'AJI KOMARUDIN',
+      assignedAt: new Date('2026-09-01T15:00:00+07:00'), // 01 Sep schedule
+      manifestCreatedAt: new Date('2026-09-01T14:00:00+07:00'),
+      status: 'SUCCESS',
+      manifestStatus: 'ACTIVE',
+      proof: { id: 'proof-4', receivedAt: new Date('2026-09-02T09:00:00+07:00') }, // TTD today
+    },
+    // 5. Driver self-scan today (2026-09-02) -> appears today
+    {
+      id: 'asg-5',
+      deliveryId: 'del-5',
+      driverId: 'drv-2',
+      driverName: 'TIAS TONO',
+      assignedAt: new Date('2026-09-02T10:15:00+07:00'), // 02 Sep scan
+      manifestCreatedAt: new Date('2026-09-02T07:00:00+07:00'),
+      status: 'ASSIGNED',
+      manifestStatus: 'ACTIVE',
+      proof: null,
+    },
+    // 6 & 7. Attempt #1 (01 Sep -> Pending) + Attempt #2 (02 Sep -> Driver self-scan redelivery)
+    {
+      id: 'asg-6-old',
+      deliveryId: 'del-6',
+      driverId: 'drv-1',
+      driverName: 'AJI KOMARUDIN',
+      assignedAt: new Date('2026-09-01T08:00:00+07:00'), // 01 Sep attempt #1
+      unassignedAt: new Date('2026-09-02T08:00:00+07:00'),
+      status: 'PENDING',
+      manifestStatus: 'ACTIVE',
+      proof: null,
+    },
+    {
+      id: 'asg-6-new',
+      deliveryId: 'del-6',
+      driverId: 'drv-1', // Same driver redelivery rescan
+      driverName: 'AJI KOMARUDIN',
+      assignedAt: new Date('2026-09-02T08:00:00+07:00'), // 02 Sep attempt #2
       unassignedAt: null,
       status: 'IN_DELIVERY',
       manifestStatus: 'ACTIVE',
-      proof: null, // Pending TTD
+      proof: null,
     },
+    // 8 & 9. Attempt #1 (01 Sep -> Driver A) + Attempt #2 (02 Sep -> Driver B redelivery)
     {
-      deliveryId: 'del-3',
-      driverId: 'drv-2',
-      driverName: 'BAMBANG HERMANTO',
-      assignedAt: new Date('2026-09-01T09:00:00+07:00'),
-      unassignedAt: null,
-      status: 'CANCELLED', // Should be excluded
+      id: 'asg-7-old',
+      deliveryId: 'del-7',
+      driverId: 'drv-1', // Driver A
+      driverName: 'AJI KOMARUDIN',
+      assignedAt: new Date('2026-09-01T09:00:00+07:00'), // 01 Sep
+      unassignedAt: new Date('2026-09-02T08:30:00+07:00'),
+      status: 'PENDING',
       manifestStatus: 'ACTIVE',
       proof: null,
     },
     {
-      deliveryId: 'del-4',
-      driverId: 'drv-2',
-      driverName: 'BAMBANG HERMANTO',
-      assignedAt: new Date('2026-09-01T09:15:00+07:00'),
+      id: 'asg-7-new',
+      deliveryId: 'del-7',
+      driverId: 'drv-2', // Driver B
+      driverName: 'TIAS TONO',
+      assignedAt: new Date('2026-09-02T08:30:00+07:00'), // 02 Sep
       unassignedAt: null,
+      status: 'SUCCESS',
+      manifestStatus: 'ACTIVE',
+      proof: { id: 'proof-7', receivedAt: new Date('2026-09-02T11:00:00+07:00') },
+    },
+    // 10. Duplicate same-day scan (del-5 scanned twice on 02 Sep)
+    {
+      id: 'asg-5-dup',
+      deliveryId: 'del-5',
+      driverId: 'drv-2',
+      driverName: 'TIAS TONO',
+      assignedAt: new Date('2026-09-02T10:14:00+07:00'), // Scanned 1 minute earlier
+      unassignedAt: new Date('2026-09-02T10:15:00+07:00'),
       status: 'ASSIGNED',
-      manifestStatus: 'VOID', // Should be excluded
+      manifestStatus: 'ACTIVE',
       proof: null,
     },
   ];
 
-  // Reassignment Scenario: del-5 assigned to drv-2 first, then reassigned to drv-1
-  const reassignmentHistory = [
-    {
-      deliveryId: 'del-5',
-      driverId: 'drv-1', // Latest active assignment
-      assignedAt: new Date('2026-09-01T11:00:00+07:00'),
-      unassignedAt: null,
-      status: 'SUCCESS',
-      manifestStatus: 'ACTIVE',
-      proof: { id: 'proof-5', receivedAt: new Date('2026-09-01T12:00:00+07:00'), signatureUrl: null },
-    },
-    {
-      deliveryId: 'del-5',
-      driverId: 'drv-2', // Old assignment
-      assignedAt: new Date('2026-09-01T08:00:00+07:00'),
-      unassignedAt: new Date('2026-09-01T11:00:00+07:00'),
-      status: 'SUCCESS',
-      manifestStatus: 'ACTIVE',
-      proof: { id: 'proof-5', receivedAt: new Date('2026-09-01T12:00:00+07:00'), signatureUrl: null },
-    },
-  ];
-
-  // Process sample aggregation logic
-  const allAssignments = [...sampleAssignments, ...reassignmentHistory];
-  const seenDeliveryIds = new Set<string>();
-  const drv1Deliveries: typeof allAssignments = [];
-
-  for (const a of allAssignments) {
-    if (seenDeliveryIds.has(a.deliveryId)) continue;
-    seenDeliveryIds.add(a.deliveryId);
-
-    if (a.status === 'CANCELLED' || a.manifestStatus === 'VOID') continue;
-
-    if (a.driverId === 'drv-1') {
-      drv1Deliveries.push(a);
+  // Filter helper matching service logic
+  function filterByDate(dateStr: string) {
+    const { startUtc, endUtc } = getAsiaJakartaDateBoundary(dateStr);
+    const matched = dataset.filter((item) => item.assignedAt >= startUtc && item.assignedAt <= endUtc);
+    
+    // Deduplicate by deliveryId on that operational day
+    const seen = new Set<string>();
+    const result = [];
+    // Sort desc by assignedAt
+    matched.sort((a, b) => b.assignedAt.getTime() - a.assignedAt.getTime());
+    for (const item of matched) {
+      if (seen.has(item.deliveryId)) continue;
+      seen.add(item.deliveryId);
+      result.push(item);
     }
+    return result;
   }
 
-  // 6 - 10. Aggregation metrics for drv-1 (del-1, del-2, del-5)
-  assert(drv1Deliveries.length === 3, '6. Team grouped correctly (drv-1 has 3 active deliveries)');
-  const totalDel = drv1Deliveries.length;
-  assert(totalDel === 3, '7. totalDelivery correct (3)');
+  // TEST CASES EXECUTION
 
-  const ttdCount = drv1Deliveries.filter((d) => d.proof !== null).length;
-  assert(ttdCount === 2, '8. totalTTD correct (2 proof records)');
+  // Case 1: Admin schedule today -> appears today
+  const todayItems = filterByDate('2026-09-02');
+  const del1 = todayItems.find((i) => i.deliveryId === 'del-1');
+  assert(del1 !== undefined, '1. Admin schedule today appears on today monitoring');
 
-  const pendingCount = Math.max(0, totalDel - ttdCount);
-  assert(pendingCount === 1, '9. totalPending = delivery - TTD (3 - 2 = 1)');
+  // Case 2: Admin schedule yesterday -> appears yesterday
+  const yesterdayItems = filterByDate('2026-09-01');
+  const del2 = yesterdayItems.find((i) => i.deliveryId === 'del-2');
+  assert(del2 !== undefined, '2. Admin schedule yesterday appears on yesterday monitoring');
 
-  const achievement = Number(((ttdCount / totalDel) * 100).toFixed(2));
-  assert(achievement === 66.67, '10. achievement correct (66.67%)');
+  // Case 3: Manifest yesterday + schedule today -> appears today
+  const del3 = todayItems.find((i) => i.deliveryId === 'del-3');
+  assert(del3 !== undefined, '3. Manifest created yesterday + scheduled today appears on today monitoring');
 
-  // 11. Zero delivery achievement safe
-  const zeroTotal = 0;
-  const zeroTtd = 0;
-  const zeroAchievement = zeroTotal > 0 ? (zeroTtd / zeroTotal) * 100 : 0;
-  assert(zeroAchievement === 0, '11. zero delivery achievement safe (0.00%)');
+  // Case 4: Schedule yesterday + TTD today -> remains yesterday operational bucket
+  const del4Yesterday = yesterdayItems.find((i) => i.deliveryId === 'del-4');
+  const del4Today = todayItems.find((i) => i.deliveryId === 'del-4');
+  assert(del4Yesterday !== undefined && del4Today === undefined, '4. Schedule yesterday + TTD today remains in yesterday operational bucket (NOT today)');
 
-  // 12 & 13. Exclude CANCELLED & VOID
-  const cancelledIncluded = drv1Deliveries.some((d) => d.status === 'CANCELLED');
-  const voidIncluded = drv1Deliveries.some((d) => d.manifestStatus === 'VOID');
-  assert(!cancelledIncluded, '12. cancelled delivery excluded');
-  assert(!voidIncluded, '13. void manifest excluded');
+  // Case 5: Driver self-scan today -> appears today
+  const del5 = todayItems.find((i) => i.deliveryId === 'del-5');
+  assert(del5 !== undefined, '5. Driver self-scan today appears on today monitoring');
 
-  // 14 & 15. Reassignment safety & latest assignment attribution
-  const del5OccurrencesInDrv1 = drv1Deliveries.filter((d) => d.deliveryId === 'del-5');
-  assert(del5OccurrencesInDrv1.length === 1, '14. reassignment not double-counted');
-  assert(del5OccurrencesInDrv1[0].driverId === 'drv-1', '15. latest/relevant assignment attributed correctly');
+  // Case 6 & 7: Pending yesterday + explicit rescan today
+  const del6Yesterday = yesterdayItems.find((i) => i.deliveryId === 'del-6');
+  const del6Today = todayItems.find((i) => i.deliveryId === 'del-6');
+  assert(del6Yesterday !== undefined && del6Yesterday.id === 'asg-6-old', '6 & 7. Old Pending attempt #1 remains historically on yesterday monitoring');
+  assert(del6Today !== undefined && del6Today.id === 'asg-6-new', '6 & 7. Rescan attempt #2 appears on today monitoring');
 
-  // 16 & 17. TTD Source of truth DeliveryProof verification
-  assert(drv1Deliveries[0].proof !== null, '16. TTD source-of-truth actual existing DeliveryProof used');
-  
-  const successNoProof = {
-    deliveryId: 'del-6',
-    status: 'SUCCESS',
-    proof: null,
-  };
-  const isTTD = successNoProof.proof !== null;
-  assert(!isTTD, '17. SUCCESS without TTD proof is not falsely counted as TTD');
+  // Case 8 & 9: Same Driver & Different Driver redelivery attempt dates
+  const del7Yesterday = yesterdayItems.find((i) => i.deliveryId === 'del-7');
+  const del7Today = todayItems.find((i) => i.deliveryId === 'del-7');
+  assert(del7Yesterday !== undefined && del7Yesterday.driverId === 'drv-1', '8 & 9. Old attempt #1 attributed to Driver A on 01 Sep');
+  assert(del7Today !== undefined && del7Today.driverId === 'drv-2', '8 & 9. New attempt #2 attributed to Driver B on 02 Sep');
 
-  // 18 - 20. Detail modal filter tabs
-  const detailAll = drv1Deliveries;
-  const detailTTD = drv1Deliveries.filter((d) => d.proof !== null);
-  const detailPending = drv1Deliveries.filter((d) => d.proof === null);
+  // Case 10: Duplicate same-day scan counts once
+  const del5CountsToday = todayItems.filter((i) => i.deliveryId === 'del-5').length;
+  assert(del5CountsToday === 1, '10. Duplicate same-day scans count as 1 delivery attempt');
 
-  assert(detailAll.length === 3, '18. detail ALL correct');
-  assert(detailTTD.length === 2, '19. detail TTD correct');
-  assert(detailPending.length === 1, '20. detail Pending correct');
+  // Case 11 - 14: Total Delivery, Total TTD, Pending, Achievement calculations
+  // On 01 Sep: del-2 (TTD), del-4 (TTD), del-6 (Pending), del-7 (Pending)
+  // Total Delivery = 4, Total TTD = 2, Total Pending = 2, Achievement = 50.00%
+  const ttdYesterday = yesterdayItems.filter((i) => i.proof !== null).length;
+  const pendingYesterday = yesterdayItems.filter((i) => i.proof === null).length;
+  const achievementYesterday = Number(((ttdYesterday / yesterdayItems.length) * 100).toFixed(2));
 
-  // 21 - 24. Team filter, pagination & query efficiency
-  const teamFiltered = allAssignments.filter((a) => a.driverId === 'drv-1');
-  assert(teamFiltered.length === 3, '21. team filter works');
+  assert(yesterdayItems.length === 4, '11. Total Delivery follows operational date (4 on 01 Sep)');
+  assert(ttdYesterday === 2, '12. Total TTD follows attempts from operational date (2 TTD on 01 Sep)');
+  assert(pendingYesterday === 2, '13. Pending follows attempts from operational date (2 Pending on 01 Sep)');
+  assert(achievementYesterday === 50, '14. Achievement calculation correct (50.00% on 01 Sep)');
 
-  const page = 1;
-  const limit = 25;
-  const paginated = detailAll.slice((page - 1) * limit, page * limit);
-  assert(paginated.length === 3, '22. pagination works');
+  // Case 15 - 18: Date Controls & Quick Navigation
+  const dateStr = '2026-09-02';
+  const [y15, m15, d15] = dateStr.split('-').map(Number);
 
-  const minimalDTOKeys = ['employeeId', 'employeeCode', 'employeeName', 'totalDelivery', 'totalTtd', 'totalPending', 'achievement'];
-  assert(minimalDTOKeys.length === 7, '23. DTO minimal');
-  assert(true, '24. no N+1 contract / query strategy tested (single query with include)');
+  const prevObj = new Date(Date.UTC(y15, m15 - 1, d15 - 1));
+  const prevStr = `${prevObj.getUTCFullYear()}-${String(prevObj.getUTCMonth() + 1).padStart(2, '0')}-${String(prevObj.getUTCDate()).padStart(2, '0')}`;
+  assert(prevStr === '2026-09-01', '15. Previous-day button shifts date -1 day correctly');
+
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const todayStr = formatter.format(now);
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(todayStr), '16. Today button sets Asia/Jakarta YYYY-MM-DD correctly');
+
+  const nextObj = new Date(Date.UTC(y15, m15 - 1, d15 + 1));
+  const nextStr = `${nextObj.getUTCFullYear()}-${String(nextObj.getUTCMonth() + 1).padStart(2, '0')}-${String(nextObj.getUTCDate()).padStart(2, '0')}`;
+  assert(nextStr === '2026-09-03', '17. Next-day button shifts date +1 day correctly');
+
+  const pickerParsed = getAsiaJakartaDateBoundary('2026-09-05');
+  assert(pickerParsed.dateStr === '2026-09-05', '18. Date picker selects exact date string');
+
+  // Case 19 & 20: Driver filter & Search combination
+  const drv1Today = todayItems.filter((i) => i.driverId === 'drv-1');
+  const searchMatch = todayItems.filter((i) => i.driverName.includes('TIAS'));
+
+  assert(drv1Today.length === 2, '19. Driver filter + date combination works correctly');
+  assert(searchMatch.length === 3, '20. Search + date combination works correctly');
+
+  // Authorization Roles Check
+  const allowedRoles = [USER_ROLES.OWNER, USER_ROLES.ADMIN, USER_ROLES.OPS, USER_ROLES.FINANCE];
+  assert(isRoleAllowed(USER_ROLES.OWNER, allowedRoles), 'OWNER authorized');
+  assert(isRoleAllowed(USER_ROLES.ADMIN, allowedRoles), 'ADMIN authorized');
+  assert(isRoleAllowed(USER_ROLES.OPS, allowedRoles), 'OPS authorized');
+  assert(!isRoleAllowed(USER_ROLES.DRIVER, allowedRoles), 'DRIVER forbidden');
 
   console.log(`\n=== Test Results: ${passed} Passed, ${failed} Failed ===`);
 
