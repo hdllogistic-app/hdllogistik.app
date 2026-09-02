@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -152,26 +153,44 @@ export function AdminSidebar() {
         isCollapsed ? 'w-20' : 'w-64'
       } min-h-[calc(100vh-65px)] max-h-[calc(100vh-65px)] overflow-y-auto`}
     >
-      <div className="space-y-4">
-        {/* Collapse Control Toggle Header */}
-        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between px-2'} pt-1 pb-2 border-b border-slate-800/80`}>
-          {!isCollapsed && (
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
-              Menu Navigasi
-            </span>
-          )}
+      <div className="space-y-3">
+        {/* Branding Header with Real HDL LOGISTIK Logo & Dedicated Collapse Button */}
+        <div
+          className={`flex items-center ${
+            isCollapsed ? 'flex-col gap-2.5 justify-center' : 'justify-between px-2'
+          } pt-1 pb-3 border-b border-slate-800/80`}
+        >
+          <div className="flex items-center gap-3 overflow-hidden">
+            <Image
+              src="/icons/icon.svg"
+              alt="HDL LOGISTIK"
+              width={36}
+              height={36}
+              className="h-9 w-9 rounded-lg object-contain shrink-0 shadow-md shadow-sky-500/10"
+            />
+            {!isCollapsed && (
+              <div className="overflow-hidden">
+                <h2 className="font-extrabold text-sm leading-tight text-white truncate">
+                  HDL LOGISTIK
+                </h2>
+                <span className="text-[10px] text-sky-400 font-medium block truncate">
+                  Admin & Operational
+                </span>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={toggleSidebarCollapse}
-            className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition shadow-sm"
+            className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition shadow-sm shrink-0"
             title={isCollapsed ? 'Perluas Sidebar' : 'Kecilkan Sidebar'}
           >
             {isCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
         </div>
 
-        {/* Navigation Items */}
-        <nav className="space-y-1 text-xs">
+        {/* Navigation Items (Starts directly after header divider) */}
+        <nav className="space-y-1 text-xs pt-1">
           {/* STANDALONE DASHBOARD ITEM */}
           <Link
             href="/"
